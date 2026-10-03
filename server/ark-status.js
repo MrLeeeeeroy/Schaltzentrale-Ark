@@ -39,7 +39,7 @@ const KARTEN = config.karten || {};                              // { "1": "New 
 const LAUFWERK = (config.laufwerk || 'E:').replace(/\\$/, '');   // überwachter Datenträger
 const SHELLY_IP = config.shellyIp || '';                         // leer = keine Strommessung
 const STROMPREIS = config.strompreisProKwh || 0.2917;            // Euro pro kWh
-const PIHOLE_URL = (config.piholeUrl || '').replace(/\/+$/, '');  // z. B. http://192.168.178.2 – leer = aus
+const PIHOLE_URL = (config.piholeUrl || '').replace(/\/+$/, '');  // z. B. http://192.168.x.x – leer = aus
 const PIHOLE_PASSWORT = config.piholePasswort || '';             // am besten ein App-Passwort
 // ==============================================================================
 

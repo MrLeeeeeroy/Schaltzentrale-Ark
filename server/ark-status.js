@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ARK Status für die Schaltzentrale
-// Fragt alle ASA-Server per RCON ab (online/offline + Spieler) und stellt das
-// Ergebnis als kleine JSON-Schnittstelle bereit: http://127.0.0.1:8787/status
+// Fragt alle ASA-Server per RCON ab (online/offline + Spieler), dazu CPU, RAM,
+// Datenträger und – mit Shelly-Steckdose – den Stromverbrauch. Ergebnis als
+// kleine JSON-Schnittstelle: http://127.0.0.1:8787/status
 //
 // Die Schnittstelle lauscht NUR auf diesem PC (127.0.0.1). Ins Internet kommt
 // sie ausschließlich über Tailscale Funnel. Das RCON-Passwort verlässt den PC nie,
@@ -35,6 +36,9 @@ const SPIELERNAMEN_ZEIGEN = config.spielernamenZeigen !== false; // false = nur 
 const ERSTER_RCON_PORT = config.ersterRconPort || 27071;         // ASA01; ASA02 = +1 usw.
 const ANZAHL_SERVER = config.anzahlServer || 20;
 const KARTEN = config.karten || {};                              // { "1": "New Island", ... }
+const LAUFWERK = (config.laufwerk || 'E:').replace(/\\$/, '');   // überwachter Datenträger
+const SHELLY_IP = config.shellyIp || '';                         // leer = keine Strommessung
+const STROMPREIS = config.strompreisProKwh || 0.2917;            // Euro pro kWh
 // ==============================================================================
 
 const servers = Array.from({ length: ANZAHL_SERVER }, (_, i) => {
@@ -117,6 +121,142 @@ function spielerAuslesen(antwort) {
   return namen;
 }
 
+// ---------- Root-Server: CPU, RAM, Datenträger, Laufzeit ----------
+const os = require('os');
+const { execFile } = require('child_process');
+
+function cpuSumme() {
+  let leer = 0, gesamt = 0;
+  for (const c of os.cpus()) {
+    for (const t of Object.values(c.times)) gesamt += t;
+    leer += c.times.idle;
+  }
+  return { leer, gesamt };
+}
+let letzteCpu = cpuSumme();
+// Durchschnittliche CPU-Auslastung seit der letzten Abfrage
+function cpuProzent() {
+  const jetzt = cpuSumme();
+  const dGesamt = jetzt.gesamt - letzteCpu.gesamt;
+  const dLeer = jetzt.leer - letzteCpu.leer;
+  letzteCpu = jetzt;
+  return dGesamt > 0 ? Math.round((1 - dLeer / dGesamt) * 100) : null;
+}
+
+function laufwerkLesen() {
+  return new Promise((resolve) => {
+    // Neuere Node-Versionen können das direkt
+    if (typeof fs.statfs === 'function') {
+      return fs.statfs(LAUFWERK.startsWith('/') ? LAUFWERK : LAUFWERK + '\\', (fehler, st) => {
+        if (fehler) return resolve(null);
+        const gesamt = st.blocks * st.bsize, frei = st.bavail * st.bsize;
+        resolve({ gesamt, frei });
+      });
+    }
+    // Ältere Node-Versionen: über PowerShell
+    const buchstabe = LAUFWERK.replace(':', '');
+    execFile('powershell', ['-NoProfile', '-Command',
+      `$d = Get-PSDrive ${buchstabe}; Write-Output "$($d.Used) $($d.Free)"`],
+      { timeout: 10000, windowsHide: true },
+      (fehler, ausgabe) => {
+        if (fehler) return resolve(null);
+        const [belegt, frei] = String(ausgabe).trim().split(/\s+/).map(Number);
+        if (!isFinite(belegt) || !isFinite(frei)) return resolve(null);
+        resolve({ gesamt: belegt + frei, frei });
+      });
+  });
+}
+
+async function systemAbfragen() {
+  const gb = (b) => Math.round(b / 1024 ** 3);
+  const ramGesamt = os.totalmem(), ramFrei = os.freemem();
+  const lw = await laufwerkLesen();
+  return {
+    cpuProzent: cpuProzent(),
+    ramProzent: Math.round((1 - ramFrei / ramGesamt) * 100),
+    ramGesamtGB: gb(ramGesamt),
+    laufwerk: lw ? {
+      name: LAUFWERK,
+      prozent: Math.round((1 - lw.frei / lw.gesamt) * 100),
+      freiGB: gb(lw.frei),
+      gesamtGB: gb(lw.gesamt)
+    } : { name: LAUFWERK, prozent: null },
+    laufzeitSek: Math.round(os.uptime())
+  };
+}
+
+// ---------- Strom: Shelly Plug S Gen3 (nur lesen, niemals schalten) ----------
+const energiePfad = path.join(__dirname, 'energie.json');
+let energie = (() => {
+  try { return JSON.parse(fs.readFileSync(energiePfad, 'utf8')); } catch { return {}; }
+})();
+function energieSpeichern() {
+  try { fs.writeFileSync(energiePfad, JSON.stringify(energie, null, 2)); } catch (e) { console.error('energie.json:', e.message); }
+}
+
+function shellyLesen() {
+  return new Promise((resolve) => {
+    const req = http.get(`http://${SHELLY_IP}/rpc/Switch.GetStatus?id=0`, { timeout: 4000 }, (res) => {
+      let text = '';
+      res.on('data', (d) => (text += d));
+      res.on('end', () => {
+        try {
+          const d = JSON.parse(text);
+          resolve({ watt: d.apower, zaehlerWh: d.aenergy && d.aenergy.total });
+        } catch { resolve(null); }
+      });
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(null));
+  });
+}
+
+// Datum in Berliner Zeit, z. B. "2026-10-03"
+function heuteSchluessel(d = new Date()) {
+  return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+}
+
+async function stromAbfragen() {
+  if (!SHELLY_IP) return null;
+  const messung = await shellyLesen();
+  if (!messung || typeof messung.watt !== 'number' || typeof messung.zaehlerWh !== 'number') return null;
+
+  const jetzt = new Date();
+  const tag = heuteSchluessel(jetzt);
+  const monat = tag.slice(0, 7);
+
+  // Verbrauch seit der letzten Messung aufaddieren
+  let neu = 0;
+  if (typeof energie.letzterZaehlerWh === 'number') {
+    neu = messung.zaehlerWh - energie.letzterZaehlerWh;
+    if (neu < 0) neu = messung.zaehlerWh; // Zähler der Steckdose wurde zurückgesetzt
+  }
+  energie.letzterZaehlerWh = messung.zaehlerWh;
+
+  if (energie.tag !== tag) { energie.tag = tag; energie.tagWh = 0; }
+  if (energie.monat !== monat) { energie.monat = monat; energie.monatWh = 0; energie.monatStart = jetzt.toISOString(); }
+  energie.tagWh += neu;
+  energie.monatWh += neu;
+  energieSpeichern();
+
+  // Hochrechnung aus dem Durchschnitt seit Beginn der Messung in diesem Monat
+  const [j, m] = monat.split('-').map(Number);
+  const stundenImMonat = new Date(j, m, 0).getDate() * 24;
+  const gemesseneStunden = (jetzt - new Date(energie.monatStart)) / 3600e3;
+  // In der ersten Stunde gibt es noch keinen Durchschnitt: dann mit der aktuellen Leistung rechnen
+  const mittlereWatt = gemesseneStunden >= 1 ? energie.monatWh / gemesseneStunden : messung.watt;
+  const hochrechnung = mittlereWatt * stundenImMonat / 1000 * STROMPREIS;
+
+  const runde = (x, n = 2) => Math.round(x * 10 ** n) / 10 ** n;
+  return {
+    watt: Math.round(messung.watt),
+    heute: { kwh: runde(energie.tagWh / 1000, 1), euro: runde(energie.tagWh / 1000 * STROMPREIS) },
+    monat: { kwh: runde(energie.monatWh / 1000, 1), euro: runde(energie.monatWh / 1000 * STROMPREIS) },
+    hochrechnungEuro: hochrechnung === null ? null : Math.round(hochrechnung),
+    preisProKwh: STROMPREIS
+  };
+}
+
 // ---------- Abfrage aller Server ----------
 let stand = {
   stand: null,
@@ -124,6 +264,10 @@ let stand = {
 };
 
 async function allesAbfragen() {
+  const [system, strom] = await Promise.all([
+    systemAbfragen().catch((e) => { console.error('System:', e.message); return null; }),
+    stromAbfragen().catch((e) => { console.error('Strom:', e.message); return null; })
+  ]);
   const ergebnisse = await Promise.all(servers.map(async (s) => {
     const { online, antwort } = await rconBefehl(SERVER_IP, s.rconPort, RCON_PASSWORD, 'ListPlayers');
     const namen = online ? spielerAuslesen(antwort) : [];
@@ -135,10 +279,12 @@ async function allesAbfragen() {
       spieler: SPIELERNAMEN_ZEIGEN && namen ? namen : []
     };
   }));
-  stand = { stand: new Date().toISOString(), server: ergebnisse };
+  stand = { stand: new Date().toISOString(), server: ergebnisse, system, strom };
   const on = ergebnisse.filter((e) => e.online).length;
   const sp = ergebnisse.reduce((n, e) => n + (e.spielerzahl || 0), 0);
-  console.log(`[${new Date().toLocaleTimeString('de-DE')}] ${on}/${ergebnisse.length} online, ${sp} Spieler`);
+  const extra = (system ? ` | CPU ${system.cpuProzent} % RAM ${system.ramProzent} % ${LAUFWERK} ${system.laufwerk.prozent} %` : '')
+    + (strom ? ` | ${strom.watt} W` : (SHELLY_IP ? ' | Shelly nicht erreichbar' : ''));
+  console.log(`[${new Date().toLocaleTimeString('de-DE')}] ${on}/${ergebnisse.length} online, ${sp} Spieler${extra}`);
 }
 
 let laeuft = false;

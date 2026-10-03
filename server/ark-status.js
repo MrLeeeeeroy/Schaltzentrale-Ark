@@ -167,10 +167,31 @@ function laufwerkLesen() {
   });
 }
 
+// Letzter Start laut Windows-Ereignisprotokoll (Kernel-Boot, Ereignis 27).
+// os.uptime() reicht nicht: Mit dem Windows-Schnellstart läuft dieser Zähler
+// beim Herunterfahren weiter und zeigt dann Tage oder Wochen zu viel.
+function startzeitLesen() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve(null);
+    const befehl = "(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Kernel-Boot'; Id=27} -MaxEvents 1).TimeCreated.ToUniversalTime().ToString('o')";
+    execFile('powershell', ['-NoProfile', '-Command', befehl], { timeout: 15000, windowsHide: true }, (fehler, ausgabe) => {
+      if (fehler) return resolve(null);
+      const zeit = new Date(String(ausgabe).trim());
+      resolve(isNaN(zeit) ? null : zeit);
+    });
+  });
+}
+
+async function laufzeitSekunden() {
+  const start = await startzeitLesen();
+  if (start) return Math.max(0, Math.round((Date.now() - start) / 1000));
+  return Math.round(os.uptime()); // Ersatz, falls das Protokoll nicht lesbar ist
+}
+
 async function systemAbfragen() {
   const gb = (b) => Math.round(b / 1024 ** 3);
   const ramGesamt = os.totalmem(), ramFrei = os.freemem();
-  const lw = await laufwerkLesen();
+  const [lw, laufzeit] = await Promise.all([laufwerkLesen(), laufzeitSekunden()]);
   return {
     cpuProzent: cpuProzent(),
     ramProzent: Math.round((1 - ramFrei / ramGesamt) * 100),
@@ -181,7 +202,7 @@ async function systemAbfragen() {
       freiGB: gb(lw.frei),
       gesamtGB: gb(lw.gesamt)
     } : { name: LAUFWERK, prozent: null },
-    laufzeitSek: Math.round(os.uptime())
+    laufzeitSek: laufzeit
   };
 }
 

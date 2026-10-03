@@ -2,7 +2,7 @@
   "serverIp": "192.168.x.x",
   "rconPasswort": "DEIN_RCON_PASSWORT",
   "httpPort": 8787,
-  "abfrageAlleSekunden": 60,
+  "abfrageAlleSekunden": 300,
   "spielernamenZeigen": true,
   "ersterRconPort": 27071,
   "anzahlServer": 20,

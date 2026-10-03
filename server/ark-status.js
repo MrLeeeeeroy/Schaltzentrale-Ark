@@ -29,7 +29,7 @@ const config = JSON.parse(fs.readFileSync(configPfad, 'utf8'));
 const SERVER_IP = config.serverIp;
 const RCON_PASSWORD = config.rconPasswort;
 const HTTP_PORT = config.httpPort || 8787;                       // lokaler Port für Tailscale Funnel
-const ABFRAGE_ALLE_SEKUNDEN = config.abfrageAlleSekunden || 60;  // wie oft alle Server abgefragt werden
+const ABFRAGE_ALLE_SEKUNDEN = config.abfrageAlleSekunden || 300; // wie oft alle Server abgefragt werden
 const ZEITLIMIT_MS = 4000;                                       // Wartezeit pro Server
 const SPIELERNAMEN_ZEIGEN = config.spielernamenZeigen !== false; // false = nur Anzahl
 const ERSTER_RCON_PORT = config.ersterRconPort || 27071;         // ASA01; ASA02 = +1 usw.

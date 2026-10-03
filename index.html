@@ -820,7 +820,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
    ARK Cluster: Live-Status vom Server-PC (über Tailscale Funnel)
    ===================================================================== */
 const ARK_API = ""; // Adresse des Statusdienstes, z. B. "https://server.tailxxxx.ts.net/status"
-const ARK_ALLE_SEKUNDEN = 60;
+const ARK_ALLE_SEKUNDEN = 300; // alle 5 Minuten
 
 function arkZeigen(daten) {
   const liste = daten.server || [];
@@ -871,8 +871,8 @@ async function arkLaden() {
     const antwort = await fetch(ARK_API + (ARK_API.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" });
     if (!antwort.ok) throw new Error("HTTP " + antwort.status);
     const daten = await antwort.json();
-    // Daten älter als 5 Minuten: Dienst hängt
-    if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 5 * 60 * 1000) throw new Error("veraltet");
+    // Daten älter als 12 Minuten (über zwei Abfragen verpasst): Dienst hängt
+    if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 12 * 60 * 1000) throw new Error("veraltet");
     arkZeigen(daten);
   } catch (e) {
     arkFehler();

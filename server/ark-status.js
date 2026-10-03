@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ARK Status für die Schaltzentrale
 // Fragt alle ASA-Server per RCON ab (online/offline + Spieler), dazu CPU, RAM,
-// Datenträger und – mit Shelly-Steckdose – den Stromverbrauch. Ergebnis als
+// Datenträger, Pi-hole und – mit Shelly-Steckdose – den Stromverbrauch. Ergebnis als
 // kleine JSON-Schnittstelle: http://127.0.0.1:8787/status
 //
 // Die Schnittstelle lauscht NUR auf diesem PC (127.0.0.1). Ins Internet kommt
@@ -39,6 +39,8 @@ const KARTEN = config.karten || {};                              // { "1": "New 
 const LAUFWERK = (config.laufwerk || 'E:').replace(/\\$/, '');   // überwachter Datenträger
 const SHELLY_IP = config.shellyIp || '';                         // leer = keine Strommessung
 const STROMPREIS = config.strompreisProKwh || 0.2917;            // Euro pro kWh
+const PIHOLE_URL = (config.piholeUrl || '').replace(/\/+$/, '');  // z. B. http://192.168.178.2 – leer = aus
+const PIHOLE_PASSWORT = config.piholePasswort || '';             // am besten ein App-Passwort
 // ==============================================================================
 
 const servers = Array.from({ length: ANZAHL_SERVER }, (_, i) => {
@@ -284,6 +286,68 @@ async function stromAbfragen() {
   };
 }
 
+// ---------- Pi-hole (Version 6, nur lesen) ----------
+const https = require('https');
+let piholeSid = null;
+
+function piholeAnfrage(methode, pfad, koerper) {
+  return new Promise((resolve) => {
+    let url;
+    try { url = new URL(PIHOLE_URL + pfad); } catch { return resolve({ status: 0, daten: null }); }
+    const modul = url.protocol === 'https:' ? https : http;
+    const kopf = { 'Accept': 'application/json' };
+    if (piholeSid) kopf['X-FTL-SID'] = piholeSid;
+    const text = koerper ? JSON.stringify(koerper) : null;
+    if (text) { kopf['Content-Type'] = 'application/json'; kopf['Content-Length'] = Buffer.byteLength(text); }
+    const req = modul.request(url, { method: methode, headers: kopf, timeout: 5000, rejectUnauthorized: false }, (res) => {
+      let roh = '';
+      res.on('data', (d) => (roh += d));
+      res.on('end', () => {
+        let daten = null;
+        try { daten = JSON.parse(roh); } catch {}
+        resolve({ status: res.statusCode, daten });
+      });
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve({ status: 0, daten: null }));
+    if (text) req.write(text);
+    req.end();
+  });
+}
+
+async function piholeAnmelden() {
+  piholeSid = null;
+  if (!PIHOLE_PASSWORT) return false;
+  const { status, daten } = await piholeAnfrage('POST', '/api/auth', { password: PIHOLE_PASSWORT });
+  if (status === 200 && daten && daten.session && daten.session.sid) {
+    piholeSid = daten.session.sid;
+    return true;
+  }
+  return false;
+}
+
+async function piholeAbfragen() {
+  if (!PIHOLE_URL) return null;
+  let antwort = await piholeAnfrage('GET', '/api/stats/summary');
+  // Sitzung abgelaufen oder noch nicht angemeldet: einmal anmelden und erneut versuchen
+  if ((antwort.status === 401 || antwort.status === 403) && await piholeAnmelden()) {
+    antwort = await piholeAnfrage('GET', '/api/stats/summary');
+  }
+  const d = antwort.daten;
+  if (antwort.status !== 200 || !d || !d.queries) {
+    if (antwort.status === 401) console.error('Pi-hole: Anmeldung fehlgeschlagen – Passwort in config.json prüfen');
+    return { online: false };
+  }
+  const q = d.queries, g = d.gravity || {};
+  return {
+    online: true,
+    anfragen: q.total ?? null,
+    blockiert: q.blocked ?? null,
+    prozent: typeof q.percent_blocked === 'number' ? Math.round(q.percent_blocked * 10) / 10 : null,
+    domains: g.domains_being_blocked ?? null
+  };
+}
+
 // ---------- Abfrage aller Server ----------
 let stand = {
   stand: null,
@@ -291,9 +355,10 @@ let stand = {
 };
 
 async function allesAbfragen() {
-  const [system, strom] = await Promise.all([
+  const [system, strom, pihole] = await Promise.all([
     systemAbfragen().catch((e) => { console.error('System:', e.message); return null; }),
-    stromAbfragen().catch((e) => { console.error('Strom:', e.message); return null; })
+    stromAbfragen().catch((e) => { console.error('Strom:', e.message); return null; }),
+    piholeAbfragen().catch((e) => { console.error('Pi-hole:', e.message); return { online: false }; })
   ]);
   const ergebnisse = await Promise.all(servers.map(async (s) => {
     const { online, antwort } = await rconBefehl(SERVER_IP, s.rconPort, RCON_PASSWORD, 'ListPlayers');
@@ -306,11 +371,12 @@ async function allesAbfragen() {
       spieler: SPIELERNAMEN_ZEIGEN && namen ? namen : []
     };
   }));
-  stand = { stand: new Date().toISOString(), server: ergebnisse, system, strom };
+  stand = { stand: new Date().toISOString(), server: ergebnisse, system, strom, pihole };
   const on = ergebnisse.filter((e) => e.online).length;
   const sp = ergebnisse.reduce((n, e) => n + (e.spielerzahl || 0), 0);
   const extra = (system ? ` | CPU ${system.cpuProzent} % RAM ${system.ramProzent} % ${LAUFWERK} ${system.laufwerk.prozent} %` : '')
-    + (strom ? ` | ${strom.watt} W${strom.gemessen ? '' : (SHELLY_IP ? ' (Shelly nicht erreichbar)' : ' (keine Shelly)')}` : '');
+    + (strom ? ` | ${strom.watt} W${strom.gemessen ? '' : (SHELLY_IP ? ' (Shelly nicht erreichbar)' : ' (keine Shelly)')}` : '')
+    + (pihole ? (pihole.online ? ` | Pi-hole ${pihole.prozent} % blockiert` : ' | Pi-hole nicht erreichbar') : '');
   console.log(`[${new Date().toLocaleTimeString('de-DE')}] ${on}/${ergebnisse.length} online, ${sp} Spieler${extra}`);
 }
 

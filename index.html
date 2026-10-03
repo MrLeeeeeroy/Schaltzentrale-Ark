@@ -248,6 +248,43 @@ body {
 .wetter { gap: 1rem; }
 .zifferblatt { width: min(100%, 58vh); }
 
+
+/* ---------- Pi-hole ---------- */
+.pihole { display: grid; gap: 0.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.pihole-kopf { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.pihole-status { font-size: 0.8rem; color: var(--muted); }
+.pihole-status.aus { color: var(--aus); }
+.pihole-werte { display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 0.2rem 0.8rem; }
+.pw { display: grid; gap: 0.15rem; min-width: 0; }
+.pw .z { font-size: 1.05rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pw .b { display: flex; align-items: center; gap: 0.35rem; font-family: var(--font-label); font-size: 0.6rem;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.pw .b::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--farbe); flex: none; }
+
+
+/* ---------- Kompakter rechts, damit Pi-hole, Wetter, ARK und Root-Server auf einen Bildschirm passen ---------- */
+.wetter { gap: 0.8rem; }
+.temp { font-size: clamp(2.8rem, 5.2vw, 4.3rem); }
+.jetzt svg { width: clamp(46px, 5.2vw, 66px); }
+.beschreibung { font-size: clamp(1rem, 1.6vw, 1.2rem); }
+.stunde { gap: 0.2rem; }
+.stunde svg { width: 26px; height: 26px; }
+.pihole { padding-bottom: 0.8rem; }
+.ark, .root { padding-top: 0.8rem; gap: 0.6rem; }
+.watt { font-size: 2.2rem; }
+.wetter { gap: 0.6rem; }
+.jetzt { gap: 0.8rem; }
+.stunden { gap: 0.2rem; }
+.stunde .h { font-size: 0.68rem; }
+.stunde .t { font-size: 0.95rem; }
+.ampeln { gap: 0.3rem 0.3rem; }
+.ark-liste { gap: 0.2rem; font-size: 0.84rem; }
+.pw .z { font-size: 0.98rem; }
+.last { gap: 0.7rem; }
+@media (orientation: landscape) and (min-width: 761px) {
+  .buehne { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+}
+
 /* Symbolfarben */
 .i-sonne { color: var(--sun); }
 .i-mond, .i-wolke, .i-nebel { color: var(--muted); }
@@ -296,6 +333,18 @@ body.nacht #himmel { opacity: 0.6; }
   </section>
 
   <section class="wetter" aria-label="Wetter">
+    <div class="pihole" id="pihole">
+      <div class="pihole-kopf">
+        <span class="label">Pi-hole</span>
+        <span class="pihole-status" id="piholeStatus">wird geladen …</span>
+      </div>
+      <div class="pihole-werte">
+        <div class="pw" style="--farbe: var(--rain)"><span class="z" id="phAnfragen">–</span><span class="b">Anfragen</span></div>
+        <div class="pw" style="--farbe: var(--aus)"><span class="z" id="phBlockiert">–</span><span class="b">Blockiert</span></div>
+        <div class="pw" style="--farbe: var(--sun)"><span class="z" id="phProzent">–</span><span class="b">Anteil</span></div>
+        <div class="pw" style="--farbe: var(--an)"><span class="z" id="phDomains">–</span><span class="b">Domains</span></div>
+      </div>
+    </div>
     <div class="label" id="ort">Berlin</div>
     <div class="jetzt">
       <span id="icon"></span>
@@ -939,6 +988,28 @@ function rootZeigen(system, strom) {
   $("kostenProg").textContent = `≈ ${s.hochrechnungEuro ?? 0} €`;
 }
 
+
+/* ---------- Pi-hole ---------- */
+const zahl = (x) => typeof x === "number" ? x.toLocaleString("de-DE") : "–";
+
+function piholeZeigen(ph) {
+  const status = $("piholeStatus");
+  if (!ph || !ph.online) {
+    status.textContent = "offline";
+    status.classList.add("aus");
+    ["phAnfragen", "phBlockiert", "phProzent", "phDomains"].forEach((id) => ($(id).textContent = "–"));
+    return;
+  }
+  status.textContent = "letzte 24 Std.";
+  status.classList.remove("aus");
+  $("phAnfragen").textContent = zahl(ph.anfragen);
+  $("phBlockiert").textContent = zahl(ph.blockiert);
+  $("phProzent").textContent = typeof ph.prozent === "number"
+    ? ph.prozent.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " %"
+    : "–";
+  $("phDomains").textContent = zahl(ph.domains);
+}
+
 function arkFehler() {
   // Keine Daten vom Statusdienst: alle Server als offline anzeigen
   const summe = $("arkSumme");
@@ -947,6 +1018,7 @@ function arkFehler() {
   $("ampeln").querySelectorAll(".punkt").forEach((p) => { p.className = "punkt aus"; p.innerHTML = ""; });
   $("arkListe").innerHTML = "";
   rootZeigen(null, null);
+  piholeZeigen(null);
 }
 
 async function arkLaden() {
@@ -958,6 +1030,7 @@ async function arkLaden() {
     if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 7 * 60 * 1000) throw new Error("veraltet");
     arkZeigen(daten);
     rootZeigen(daten.system, daten.strom);
+    piholeZeigen(daten.pihole);
   } catch (e) {
     arkFehler();
   }

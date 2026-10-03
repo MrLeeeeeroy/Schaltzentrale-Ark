@@ -9,6 +9,8 @@
   "laufwerk": "E:",
   "shellyIp": "",
   "strompreisProKwh": 0.2917,
+  "piholeUrl": "http://192.168.x.x",
+  "piholePasswort": "DEIN_PIHOLE_APP_PASSWORT",
   "karten": {
     "1": "New Island",
     "2": "Scorched Earth",

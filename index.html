@@ -862,7 +862,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
    ARK Cluster: Live-Status vom Server-PC (über Tailscale Funnel)
    ===================================================================== */
 const ARK_API = "https://ark-server-2.tail667b26.ts.net/status"; // Adresse des Statusdienstes, z. B. "https://server.tailxxxx.ts.net/status"
-const ARK_ALLE_SEKUNDEN = 300; // alle 5 Minuten
+const ARK_ALLE_SEKUNDEN = 120; // alle 2 Minuten
 
 function arkZeigen(daten) {
   const liste = daten.server || [];
@@ -954,8 +954,8 @@ async function arkLaden() {
     const antwort = await fetch(ARK_API + (ARK_API.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" });
     if (!antwort.ok) throw new Error("HTTP " + antwort.status);
     const daten = await antwort.json();
-    // Daten älter als 12 Minuten (über zwei Abfragen verpasst): Dienst hängt
-    if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 12 * 60 * 1000) throw new Error("veraltet");
+    // Daten älter als 7 Minuten (drei Abfragen verpasst): Dienst hängt
+    if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 7 * 60 * 1000) throw new Error("veraltet");
     arkZeigen(daten);
     rootZeigen(daten.system, daten.strom);
   } catch (e) {

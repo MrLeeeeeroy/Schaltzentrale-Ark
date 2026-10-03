@@ -858,10 +858,11 @@ function arkZeigen(daten) {
 }
 
 function arkFehler() {
+  // Keine Daten vom Statusdienst: alle Server als offline anzeigen
   const summe = $("arkSumme");
   summe.classList.add("fehler");
-  summe.textContent = "Server-PC nicht erreichbar";
-  $("ampeln").querySelectorAll(".punkt").forEach((p) => { p.className = "punkt unbekannt"; p.innerHTML = ""; });
+  summe.textContent = "Server offline";
+  $("ampeln").querySelectorAll(".punkt").forEach((p) => { p.className = "punkt aus"; p.innerHTML = ""; });
   $("arkListe").innerHTML = "";
 }
 
@@ -878,20 +879,18 @@ async function arkLaden() {
   }
 }
 
-// Platzhalter: 20 graue Punkte, bis echte Daten da sind
+// Standard: 20 rote Punkte, bis echte Daten da sind
 (function arkPlatzhalter() {
   let punkte = "";
   for (let i = 1; i <= 20; i++) {
-    punkte += `<div class="ampel"><span class="punkt unbekannt"></span>${String(i).padStart(2, "0")}</div>`;
+    punkte += `<div class="ampel"><span class="punkt aus"></span>${String(i).padStart(2, "0")}</div>`;
   }
   $("ampeln").innerHTML = punkte;
 })();
 $("ark").hidden = false;
 
 if (!ARK_API) {
-  const summe = $("arkSumme");
-  summe.classList.add("fehler");
-  summe.textContent = "Statusdienst noch nicht verbunden";
+  arkFehler();
 } else {
   arkLaden();
   setInterval(arkLaden, ARK_ALLE_SEKUNDEN * 1000);

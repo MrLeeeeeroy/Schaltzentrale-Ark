@@ -1,0 +1,14 @@
+{
+  "serverIp": "192.168.x.x",
+  "rconPasswort": "DEIN_RCON_PASSWORT",
+  "httpPort": 8787,
+  "abfrageAlleSekunden": 60,
+  "spielernamenZeigen": true,
+  "ersterRconPort": 27071,
+  "anzahlServer": 20,
+  "karten": {
+    "1": "New Island",
+    "2": "Scorched Earth",
+    "3": "The Center"
+  }
+}

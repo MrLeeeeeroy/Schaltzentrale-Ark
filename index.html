@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Schaltzentrale</title>
+
+<!-- Als App auf dem Home-Bildschirm: Vollbild, schwarze Statusleiste -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Schaltzentrale">
+<meta name="theme-color" content="#0c0e11">
+<link rel="apple-touch-icon" href="icon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;500&family=IBM+Plex+Mono:wght@400&display=swap">
+
+<style>
+/* Layout: große analoge Wanduhr links mit Digitalzeit, Datum und Feiertag darunter,
+   Wetter als ruhige Spalte rechts. Bewusst nur dunkel: Das Display hängt an der Wand. */
+:root {
+  --bg: #0c0e11;
+  --fg: #e6e9ec;
+  --muted: #7b838d;
+  --line: #1d2229;
+  --sun: #f0b54a;
+  --rain: #6ea7d8;
+  --alert: #e98a5f;
+  --an: #3fbf72;
+  --aus: #e0524a;
+  --font-body: "Manrope", "Helvetica Neue", Arial, sans-serif;
+  --font-label: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#himmel {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  transition: opacity 2s ease;
+}
+.buehne {
+  text-shadow: 0 0 14px rgba(5, 8, 14, 0.55);
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+           max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 36%);
+  gap: clamp(24px, 5vw, 72px);
+  align-items: center;
+  transition: opacity 2s ease, filter 2s ease, transform 3s ease;
+}
+
+/* ---------- Uhr ---------- */
+.uhr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  text-align: center;
+}
+.zifferblatt {
+  width: min(100%, 64vh);
+  height: auto;
+  aspect-ratio: 1;
+  max-width: 100%;
+  overflow: visible;
+}
+.zifferblatt .strich { stroke: var(--muted); stroke-width: 1.2; stroke-linecap: round; }
+.zifferblatt .strich.stunde { stroke: var(--fg); stroke-width: 3; }
+.zifferblatt .zahl {
+  fill: var(--fg);
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: 15px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.zifferblatt .tagdatum {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 9px;
+  dominant-baseline: central;
+}
+.zifferblatt .tagdatum .wt { fill: var(--fg); }
+.zifferblatt .tagdatum .tg { fill: var(--sun); }
+.zeiger { stroke-linecap: round; }
+.zeiger.std, .zeiger.min { stroke: var(--fg); }
+.zeiger.std { stroke-width: 5.5; }
+.zeiger.min { stroke-width: 3.5; }
+.zeiger.sek { stroke: var(--sun); stroke-width: 1.2; }
+.nabe { fill: var(--sun); }
+.nabe-innen { fill: var(--bg); }
+
+.digital {
+  font-weight: 300;
+  font-size: clamp(1.6rem, 3.4vw, 2.6rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  margin-top: 0.4rem;
+}
+.digital .sek { color: var(--muted); font-size: 0.6em; margin-left: 0.15em; }
+.datum {
+  font-weight: 300;
+  font-size: clamp(1.1rem, 2.2vw, 1.7rem);
+  opacity: 0.85;
+}
+.datum .kw {
+  font-family: var(--font-label);
+  font-size: 0.6em;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-left: 0.6em;
+  vertical-align: 0.15em;
+}
+.feiertag {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-size: clamp(1rem, 1.9vw, 1.4rem);
+  font-weight: 500;
+  color: var(--sun);
+}
+.feiertag .wann {
+  font-family: var(--font-label);
+  font-weight: 400;
+  font-size: 0.7em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ---------- Wetter ---------- */
+.wetter {
+  display: grid;
+  gap: 1.4rem;
+  padding-left: clamp(16px, 3vw, 40px);
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+.label {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jetzt { display: flex; align-items: center; gap: 1.1rem; }
+.jetzt svg { width: clamp(56px, 7vw, 84px); height: auto; flex: none; }
+.temp {
+  font-weight: 200;
+  font-size: clamp(3.2rem, 7vw, 5.6rem);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.beschreibung { font-size: clamp(1.05rem, 1.8vw, 1.35rem); font-weight: 300; }
+.details { color: var(--muted); font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+
+.hinweis {
+  display: flex; gap: 0.7rem; align-items: center;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+.hinweis svg { width: 26px; height: 26px; flex: none; }
+.hinweis.regen { color: var(--rain); border-color: color-mix(in srgb, var(--rain) 35%, transparent); }
+.hinweis.wind  { color: var(--alert); border-color: color-mix(in srgb, var(--alert) 35%, transparent); }
+
+.stunden {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.4rem;
+  text-align: center;
+}
+.stunde { display: grid; gap: 0.35rem; justify-items: center; }
+.stunde .h { font-family: var(--font-label); font-size: 0.75rem; color: var(--muted); }
+.stunde svg { width: 30px; height: 30px; }
+.stunde .t { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.stunde .p { font-size: 0.75rem; color: var(--rain); font-variant-numeric: tabular-nums; min-height: 1em; }
+
+.stand { font-family: var(--font-label); font-size: 0.7rem; color: var(--muted); opacity: 0.7; }
+
+
+/* ---------- ARK Cluster ---------- */
+.ark { display: grid; gap: 0.75rem; padding-top: 1.1rem; border-top: 1px solid var(--line); }
+.ark-kopf { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.ark-summe { font-size: 1rem; font-variant-numeric: tabular-nums; }
+.ark-summe b { font-weight: 500; }
+.ark-summe.fehler { color: var(--muted); }
+.ampeln { display: grid; grid-template-columns: repeat(10, 1fr); gap: 0.45rem 0.3rem; }
+.ampel { display: grid; justify-items: center; gap: 0.2rem; font-family: var(--font-label); font-size: 0.62rem; color: var(--muted); }
+.punkt { width: 13px; height: 13px; border-radius: 50%; position: relative;
+  background: var(--an); box-shadow: 0 0 8px color-mix(in srgb, var(--an) 55%, transparent); }
+.punkt.aus { background: var(--aus); box-shadow: 0 0 8px color-mix(in srgb, var(--aus) 55%, transparent); }
+.punkt.unbekannt { background: var(--line); box-shadow: none; }
+.punkt .n { position: absolute; top: -7px; right: -9px; font-family: var(--font-body); font-size: 0.6rem; font-weight: 500;
+  color: var(--bg); background: var(--fg); border-radius: 7px; padding: 0 3px; line-height: 1.25; text-shadow: none; }
+.ark-liste { display: grid; gap: 0.35rem; font-size: 0.88rem; }
+.ark-zeile { display: flex; gap: 0.5rem; align-items: baseline; min-width: 0; }
+.ark-zeile .s { font-family: var(--font-label); font-size: 0.72rem; color: var(--muted); flex: none; }
+.ark-zeile .w { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* Symbolfarben */
+.i-sonne { color: var(--sun); }
+.i-mond, .i-wolke, .i-nebel { color: var(--muted); }
+.i-regen, .i-schnee { color: var(--rain); }
+.i-gewitter { color: var(--alert); }
+
+/* ---------- Nachtmodus: dunkler, wärmer ---------- */
+body.nacht .buehne { opacity: 0.38; filter: sepia(0.35) saturate(0.8); }
+body.nacht #himmel { opacity: 0.6; }
+
+/* ---------- Hochformat / schmale Bildschirme ---------- */
+@media (orientation: portrait), (max-width: 760px) {
+  body { overflow-y: auto; }
+  .buehne {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 2.5rem;
+    height: auto;
+    min-height: 100%;
+  }
+  .zifferblatt { width: min(100%, 72vw, 46vh); }
+  .wetter { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; padding-top: 2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buehne { transition: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="himmel" aria-hidden="true"></canvas>
+<main class="buehne" id="buehne">
+  <section class="uhr" aria-label="Uhrzeit">
+    <svg class="zifferblatt" id="zifferblatt" viewBox="-110 -110 220 220" role="img" aria-label="Analoge Uhr">
+      <g id="striche"></g>
+      <text class="tagdatum" x="42" y="0" text-anchor="middle"><tspan class="wt" id="zbTag">–</tspan><tspan class="tg" id="zbDatum" dx="2">–</tspan></text>
+      <line class="zeiger std" id="zStd" x1="0" y1="10" x2="0" y2="-52"/>
+      <line class="zeiger min" id="zMin" x1="0" y1="12" x2="0" y2="-82"/>
+      <line class="zeiger sek" id="zSek" x1="0" y1="18" x2="0" y2="-92"/>
+      <circle class="nabe" r="4.2"/>
+      <circle class="nabe-innen" r="1.4"/>
+    </svg>
+    <div class="digital"><span id="zeit">--:--</span><span class="sek" id="sek">--</span></div>
+    <div class="datum"><span id="datum">&nbsp;</span><span class="kw" id="kw"></span></div>
+    <div class="feiertag" id="feiertag" hidden></div>
+  </section>
+
+  <section class="wetter" aria-label="Wetter">
+    <div class="label" id="ort">Berlin</div>
+    <div class="jetzt">
+      <span id="icon"></span>
+      <div class="temp" id="temp"></div>
+    </div>
+    <div>
+      <div class="beschreibung" id="beschreibung">Wetter wird geladen …</div>
+      <div class="details" id="details">&nbsp;</div>
+    </div>
+    <div class="hinweis regen" id="regenHinweis" hidden></div>
+    <div class="hinweis wind" id="windHinweis" hidden></div>
+    <div class="stunden" id="stunden"></div>
+
+    <div class="ark" id="ark" hidden>
+      <div class="ark-kopf">
+        <span class="label">ARK Cluster</span>
+        <span class="ark-summe" id="arkSumme">wird geladen …</span>
+      </div>
+      <div class="ampeln" id="ampeln"></div>
+      <div class="ark-liste" id="arkListe"></div>
+    </div>
+    <div class="stand" id="stand"></div>
+  </section>
+</main>
+
+<script>
+/* ===== Einstellungen – hier kannst du anpassen ===== */
+const ORT = "Berlin-Spandau";
+const BREITE = 52.536;    // Breitengrad (Spandau)
+const LAENGE = 13.200;    // Längengrad (Spandau)
+const NACHT_AB = 22;      // ab dieser Stunde dunkler
+const NACHT_BIS = 6;      // bis zu dieser Stunde dunkler
+const REGEN_SCHWELLE = 50; // Regenwahrscheinlichkeit in %, ab der der Schirm-Hinweis kommt
+const WIND_SCHWELLE = 45;  // Windböen in km/h für einen Wind-Hinweis
+/* =================================================== */
+
+const $ = (id) => document.getElementById(id);
+const zwei = (n) => String(n).padStart(2, "0");
+$("ort").textContent = ORT;
+
+/* ---------- Zifferblatt zeichnen ---------- */
+(function zifferblattZeichnen() {
+  const ns = "http://www.w3.org/2000/svg";
+  const g = $("striche");
+  for (let i = 0; i < 60; i++) {
+    const a = (i * 6 - 90) * Math.PI / 180;
+    const istStunde = i % 5 === 0;
+    const r1 = istStunde ? 88 : 94, r2 = 100;
+    const l = document.createElementNS(ns, "line");
+    l.setAttribute("class", "strich" + (istStunde ? " stunde" : ""));
+    l.setAttribute("x1", (Math.cos(a) * r1).toFixed(2));
+    l.setAttribute("y1", (Math.sin(a) * r1).toFixed(2));
+    l.setAttribute("x2", (Math.cos(a) * r2).toFixed(2));
+    l.setAttribute("y2", (Math.sin(a) * r2).toFixed(2));
+    g.appendChild(l);
+    if (istStunde) {
+      const t = document.createElementNS(ns, "text");
+      t.setAttribute("class", "zahl");
+      t.setAttribute("x", (Math.cos(a) * 75).toFixed(2));
+      t.setAttribute("y", (Math.sin(a) * 75).toFixed(2));
+      t.textContent = i === 0 ? 12 : i / 5;
+      g.appendChild(t);
+    }
+  }
+})();
+
+/* ---------- Feiertage Berlin (werden berechnet, kein Internet nötig) ---------- */
+function ostersonntag(jahr) {
+  const a = jahr % 19, b = Math.floor(jahr / 100), c = jahr % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const monat = Math.floor((h + l - 7 * m + 114) / 31);
+  const tag = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(jahr, monat - 1, tag);
+}
+function plusTage(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function schluessel(d) { return `${d.getFullYear()}-${zwei(d.getMonth() + 1)}-${zwei(d.getDate())}`; }
+
+const feiertagCache = {};
+function feiertageBerlin(jahr) {
+  if (feiertagCache[jahr]) return feiertagCache[jahr];
+  const o = ostersonntag(jahr);
+  const liste = [
+    [new Date(jahr, 0, 1), "Neujahr"],
+    [new Date(jahr, 2, 8), "Internationaler Frauentag"],
+    [plusTage(o, -2), "Karfreitag"],
+    [plusTage(o, 1), "Ostermontag"],
+    [new Date(jahr, 4, 1), "Tag der Arbeit"],
+    [plusTage(o, 39), "Christi Himmelfahrt"],
+    [plusTage(o, 50), "Pfingstmontag"],
+    [new Date(jahr, 9, 3), "Tag der Deutschen Einheit"],
+    [new Date(jahr, 11, 25), "1. Weihnachtstag"],
+    [new Date(jahr, 11, 26), "2. Weihnachtstag"]
+  ];
+  const map = {};
+  for (const [d, name] of liste) map[schluessel(d)] = name;
+  return (feiertagCache[jahr] = map);
+}
+function feiertagAm(d) { return feiertageBerlin(d.getFullYear())[schluessel(d)] || null; }
+
+function feiertagZeigen(d) {
+  const box = $("feiertag");
+  const heute = feiertagAm(d);
+  const morgen = feiertagAm(plusTage(d, 1));
+  if (heute) {
+    box.innerHTML = `<span class="wann">Heute</span><span></span>`;
+    box.lastChild.textContent = heute;
+    box.hidden = false;
+  } else if (morgen) {
+    box.innerHTML = `<span class="wann">Morgen</span><span></span>`;
+    box.lastChild.textContent = morgen;
+    box.hidden = false;
+  } else {
+    box.hidden = true;
+  }
+}
+
+/* ---------- Uhr ---------- */
+const datumFormat = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const kurzTag = new Intl.DateTimeFormat("de-DE", { weekday: "short" });
+
+function kalenderwoche(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const tag = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - tag);
+  const jahresanfang = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil(((t - jahresanfang) / 86400000 + 1) / 7);
+}
+
+let letzterTag = null;
+function tick() {
+  const d = new Date();
+  const h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+
+  // Zeiger
+  $("zSek").setAttribute("transform", `rotate(${s * 6})`);
+  $("zMin").setAttribute("transform", `rotate(${m * 6 + s * 0.1})`);
+  $("zStd").setAttribute("transform", `rotate(${(h % 12) * 30 + m * 0.5})`);
+
+  // Digitalzeit
+  $("zeit").textContent = zwei(h) + ":" + zwei(m);
+  $("sek").textContent = zwei(s);
+
+  // Datum und Feiertag nur einmal pro Tag neu
+  const tag = d.toDateString();
+  if (tag !== letzterTag) {
+    letzterTag = tag;
+    $("datum").textContent = datumFormat.format(d);
+    $("kw").textContent = "KW " + kalenderwoche(d);
+    $("zbTag").textContent = kurzTag.format(d).replace(".", "");
+    $("zbDatum").textContent = d.getDate();
+    feiertagZeigen(d);
+  }
+
+  document.body.classList.toggle("nacht", h >= NACHT_AB || h < NACHT_BIS);
+
+  setTimeout(tick, 1000 - d.getMilliseconds() + 5);
+}
+tick();
+
+/* Gegen Einbrennen: Inhalt alle 5 Minuten um ein paar Pixel verschieben */
+setInterval(() => {
+  const x = Math.round(Math.random() * 8 - 4);
+  const y = Math.round(Math.random() * 8 - 4);
+  $("buehne").style.transform = `translate(${x}px, ${y}px)`;
+}, 5 * 60 * 1000);
+
+/* Display wach halten, solange die App offen ist */
+async function wachHalten() {
+  try {
+    if ("wakeLock" in navigator && document.visibilityState === "visible") {
+      await navigator.wakeLock.request("screen");
+    }
+  } catch (e) { /* nicht unterstützt – dann Automatische Sperre in den iPad-Einstellungen auf „Nie" stellen */ }
+}
+document.addEventListener("visibilitychange", wachHalten);
+document.addEventListener("click", wachHalten, { once: true });
+wachHalten();
+
+/* ---------- Wetter ---------- */
+const BESCHREIBUNG = {
+  0: "Klar", 1: "Überwiegend klar", 2: "Teilweise bewölkt", 3: "Bedeckt",
+  45: "Nebel", 48: "Nebel mit Raureif",
+  51: "Leichter Nieselregen", 53: "Nieselregen", 55: "Starker Nieselregen",
+  56: "Gefrierender Nieselregen", 57: "Gefrierender Nieselregen",
+  61: "Leichter Regen", 63: "Regen", 65: "Starker Regen",
+  66: "Gefrierender Regen", 67: "Gefrierender Regen",
+  71: "Leichter Schneefall", 73: "Schneefall", 75: "Starker Schneefall", 77: "Schneegriesel",
+  80: "Leichte Regenschauer", 81: "Regenschauer", 82: "Heftige Regenschauer",
+  85: "Schneeschauer", 86: "Starke Schneeschauer",
+  95: "Gewitter", 96: "Gewitter mit Hagel", 99: "Gewitter mit Hagel"
+};
+
+function art(code) {
+  if (code === 0 || code === 1) return "klar";
+  if (code === 2) return "teils";
+  if (code === 3) return "wolke";
+  if (code === 45 || code === 48) return "nebel";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "schnee";
+  if (code >= 95) return "gewitter";
+  return "regen";
+}
+
+const S = 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+const WOLKE = '<path d="M14 34h20a7 7 0 0 0 0-14 10 10 0 0 0-19-2 8 8 0 0 0-1 16z"/>';
+function sonnenStrahlen(cx, cy, r1, r2) {
+  let p = "";
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    p += `<line x1="${(cx + Math.cos(a) * r1).toFixed(1)}" y1="${(cy + Math.sin(a) * r1).toFixed(1)}" x2="${(cx + Math.cos(a) * r2).toFixed(1)}" y2="${(cy + Math.sin(a) * r2).toFixed(1)}"/>`;
+  }
+  return p;
+}
+
+function symbol(code, istTag) {
+  const a = art(code);
+  const svg = (klasse, inhalt) => `<svg class="${klasse}" viewBox="0 0 48 48" ${S} aria-hidden="true">${inhalt}</svg>`;
+  if (a === "klar") {
+    return istTag
+      ? svg("i-sonne", `<circle cx="24" cy="24" r="8"/>${sonnenStrahlen(24, 24, 13, 18)}`)
+      : svg("i-mond", `<path d="M30 10a14 14 0 1 0 8 22 11 11 0 0 1-8-22z"/>`);
+  }
+  if (a === "teils") {
+    const himmel = istTag
+      ? `<g class="i-sonne"><circle cx="17" cy="17" r="6"/>${sonnenStrahlen(17, 17, 9.5, 13)}</g>`
+      : `<path d="M20 8a9 9 0 1 0 6 14 7 7 0 0 1-6-14z"/>`;
+    return `<svg viewBox="0 0 48 48" ${S} aria-hidden="true"><g class="${istTag ? "" : "i-mond"}">${himmel}</g><g class="i-wolke" fill="var(--bg)" fill-opacity="0.45">${WOLKE.replace("<path", '<path transform="translate(4 6)"')}</g></svg>`;
+  }
+  if (a === "wolke") return svg("i-wolke", WOLKE.replace("<path", '<path transform="translate(0 2)"'));
+  if (a === "nebel") return svg("i-nebel", `<line x1="10" y1="18" x2="38" y2="18"/><line x1="6" y1="25" x2="34" y2="25"/><line x1="14" y1="32" x2="42" y2="32"/>`);
+  if (a === "schnee") return svg("i-schnee", `<g class="i-wolke">${WOLKE.replace("<path", '<path transform="translate(0 -6)"')}</g><circle cx="17" cy="37" r="1.4"/><circle cx="25" cy="41" r="1.4"/><circle cx="33" cy="37" r="1.4"/>`);
+  if (a === "gewitter") return svg("i-gewitter", `<g class="i-wolke">${WOLKE.replace("<path", '<path transform="translate(0 -6)"')}</g><path d="M25 31l-4 7h6l-4 7"/>`);
+  return svg("i-regen", `<g class="i-wolke">${WOLKE.replace("<path", '<path transform="translate(0 -6)"')}</g><line x1="17" y1="34" x2="15" y2="40"/><line x1="25" y1="34" x2="23" y2="40"/><line x1="33" y1="34" x2="31" y2="40"/>`);
+}
+
+const SCHIRM = `<svg viewBox="0 0 48 48" ${S} aria-hidden="true"><path d="M6 24a18 18 0 0 1 36 0z"/><path d="M24 24v14a4 4 0 0 1-8 0"/><line x1="24" y1="6" x2="24" y2="8"/></svg>`;
+const WIND = `<svg viewBox="0 0 48 48" ${S} aria-hidden="true"><path d="M6 18h24a5 5 0 1 0-5-5"/><path d="M6 26h32a5 5 0 1 1-5 5"/><path d="M6 34h14"/></svg>`;
+
+function stundenSchluessel(d) {
+  return `${schluessel(d)}T${zwei(d.getHours())}:00`;
+}
+
+let letzteDaten = null;
+
+async function wetterLaden() {
+  const url = "https://api.open-meteo.com/v1/forecast"
+    + `?latitude=${BREITE}&longitude=${LAENGE}`
+    + "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,is_day"
+    + "&hourly=temperature_2m,weather_code,precipitation_probability,is_day"
+    + "&daily=temperature_2m_max,temperature_2m_min"
+    + "&timezone=Europe%2FBerlin&forecast_days=2";
+  try {
+    const antwort = await fetch(url, { cache: "no-store" });
+    if (!antwort.ok) throw new Error("HTTP " + antwort.status);
+    letzteDaten = await antwort.json();
+    wetterZeigen(letzteDaten, false);
+  } catch (e) {
+    if (letzteDaten) {
+      wetterZeigen(letzteDaten, true);
+    } else {
+      $("beschreibung").textContent = "Wetter gerade nicht erreichbar";
+      $("details").textContent = "Neuer Versuch in wenigen Minuten";
+    }
+    setTimeout(wetterLaden, 3 * 60 * 1000);
+  }
+}
+
+function wetterZeigen(daten, veraltet) {
+  const c = daten.current;
+  const istTag = c.is_day === 1;
+
+  $("icon").innerHTML = symbol(c.weather_code, istTag);
+  $("temp").textContent = Math.round(c.temperature_2m) + "°";
+  $("beschreibung").textContent = BESCHREIBUNG[c.weather_code] || "–";
+
+  const max = Math.round(daten.daily.temperature_2m_max[0]);
+  const min = Math.round(daten.daily.temperature_2m_min[0]);
+  $("details").textContent =
+    `Gefühlt ${Math.round(c.apparent_temperature)}° · Heute ${min}° bis ${max}° · Luftfeuchte ${Math.round(c.relative_humidity_2m)} %`;
+
+  const h = daten.hourly;
+  let start = h.time.indexOf(stundenSchluessel(new Date()));
+  if (start < 0) start = 0;
+
+  // Regenschirm-Hinweis: nur zeigen, wenn es in den nächsten 8 Stunden wichtig wird
+  const regenHinweis = $("regenHinweis");
+  regenHinweis.hidden = true;
+  for (let i = start; i < Math.min(start + 8, h.time.length); i++) {
+    if (h.precipitation_probability[i] >= REGEN_SCHWELLE) {
+      const uhrzeit = h.time[i].slice(11, 13);
+      const text = i === start
+        ? `Regen wahrscheinlich, Schirm mitnehmen (${h.precipitation_probability[i]} %)`
+        : `Ab ${Number(uhrzeit)} Uhr Regen wahrscheinlich (${h.precipitation_probability[i]} %)`;
+      regenHinweis.innerHTML = SCHIRM + `<span>${text}</span>`;
+      regenHinweis.hidden = false;
+      break;
+    }
+  }
+
+  // Wind-Hinweis: nur bei kräftigen Böen
+  const windHinweis = $("windHinweis");
+  const boeen = Math.round(c.wind_gusts_10m);
+  if (boeen >= WIND_SCHWELLE) {
+    windHinweis.innerHTML = WIND + `<span>Kräftiger Wind, Böen bis ${boeen} km/h</span>`;
+    windHinweis.hidden = false;
+  } else {
+    windHinweis.hidden = true;
+  }
+
+  // Die nächsten 5 Stunden
+  let html = "";
+  for (let i = start + 1; i <= start + 5 && i < h.time.length; i++) {
+    const p = h.precipitation_probability[i];
+    html += `<div class="stunde">
+      <span class="h">${h.time[i].slice(11, 13)} Uhr</span>
+      ${symbol(h.weather_code[i], h.is_day[i] === 1)}
+      <span class="t">${Math.round(h.temperature_2m[i])}°</span>
+      <span class="p">${p >= 20 ? p + " %" : ""}</span>
+    </div>`;
+  }
+  $("stunden").innerHTML = html;
+
+  const jetzt = new Date();
+  $("stand").textContent = (veraltet ? "Keine Verbindung · letzter Stand " : "Stand ")
+    + zwei(jetzt.getHours()) + ":" + zwei(jetzt.getMinutes());
+}
+
+wetterLaden();
+setInterval(wetterLaden, 15 * 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") wetterLaden();
+});
+
+/* =====================================================================
+   Animierter Himmel: Sonne und Mond wandern nach ihrem echten Stand
+   über den Bildschirm. Auf- und Untergang werden für den Standort
+   berechnet (astronomische Formeln, kein Internet nötig).
+   Tipp: index.html#zeitraffer zeigt 24 Stunden in 48 Sekunden.
+   ===================================================================== */
+const MOND_MODUS = "echt"; // "echt" = echte Mondzeiten, "nacht" = Mond läuft jede Nacht von Sonnenuntergang bis -aufgang
+
+const Astro = (() => {
+  const rad = Math.PI / 180, tagMs = 864e5, J1970 = 2440588, J2000 = 2451545, e = rad * 23.4397;
+  const tage = (d) => d.valueOf() / tagMs - 0.5 + J1970 - J2000;
+  const rektaszension = (l, b) => Math.atan2(Math.sin(l) * Math.cos(e) - Math.tan(b) * Math.sin(e), Math.cos(l));
+  const deklination = (l, b) => Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l));
+  const hoehe = (H, phi, dec) => Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
+  const sternzeit = (d, lw) => rad * (280.16 + 360.9856235 * d) - lw;
+
+  function sonnenKoord(d) {
+    const M = rad * (357.5291 + 0.98560028 * d);
+    const C = rad * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+    const L = M + C + rad * 102.9372 + Math.PI;
+    return { dec: deklination(L, 0), ra: rektaszension(L, 0) };
+  }
+  function mondKoord(d) {
+    const L = rad * (218.316 + 13.176396 * d), M = rad * (134.963 + 13.064993 * d), F = rad * (93.272 + 13.22935 * d);
+    const l = L + rad * 6.289 * Math.sin(M), b = rad * 5.128 * Math.sin(F);
+    return { ra: rektaszension(l, b), dec: deklination(l, b), dist: 385001 - 20905 * Math.cos(M) };
+  }
+  function hoeheVon(koordFn, datum, lat, lng) {
+    const d = tage(datum), c = koordFn(d);
+    return hoehe(sternzeit(d, rad * -lng) - c.ra, rad * lat, c.dec) / rad; // in Grad
+  }
+  return {
+    sonne: (datum, lat, lng) => hoeheVon(sonnenKoord, datum, lat, lng),
+    mond: (datum, lat, lng) => hoeheVon(mondKoord, datum, lat, lng),
+    // Mondphase: anteil = beleuchteter Teil (0–1), zunehmend = true/false
+    mondPhase(datum) {
+      const d = tage(datum), s = sonnenKoord(d), m = mondKoord(d), sdist = 149598000;
+      const phi = Math.acos(Math.sin(s.dec) * Math.sin(m.dec) + Math.cos(s.dec) * Math.cos(m.dec) * Math.cos(s.ra - m.ra));
+      const inc = Math.atan2(sdist * Math.sin(phi), m.dist - sdist * Math.cos(phi));
+      const winkel = Math.atan2(Math.cos(s.dec) * Math.sin(s.ra - m.ra),
+        Math.sin(s.dec) * Math.cos(m.dec) - Math.cos(s.dec) * Math.sin(m.dec) * Math.cos(s.ra - m.ra));
+      return { anteil: (1 + Math.cos(inc)) / 2, zunehmend: winkel < 0 };
+    }
+  };
+})();
+
+const SONNE_H0 = -0.833, MOND_H0 = 0.133; // Höhe in Grad, bei der Auf-/Untergang zählt
+const SCHRITT = 5 * 60 * 1000;
+
+/* Bogen eines Himmelskörpers um Zeitpunkt t: letzter Aufgang, nächster Untergang, höchster Stand */
+function bogen(hoeheFn, h0, t) {
+  if (hoeheFn(t) <= h0) return null;
+  let auf = null, unter = null, max = -90;
+  for (let x = t.valueOf(); x > t - 30 * 3600e3; x -= SCHRITT) {
+    const a = hoeheFn(new Date(x)); max = Math.max(max, a);
+    if (a <= h0) { const b = hoeheFn(new Date(x + SCHRITT)); auf = x + SCHRITT * (h0 - a) / (b - a); break; }
+  }
+  for (let x = t.valueOf(); x < t.valueOf() + 30 * 3600e3; x += SCHRITT) {
+    const a = hoeheFn(new Date(x)); max = Math.max(max, a);
+    if (a <= h0) { const b = hoeheFn(new Date(x - SCHRITT)); unter = x - SCHRITT * (h0 - a) / (b - a); break; }
+  }
+  if (auf === null || unter === null) return null;
+  return { anteil: (t - auf) / (unter - auf), maxHoehe: max };
+}
+
+const sonnenHoehe = (d) => Astro.sonne(d, BREITE, LAENGE);
+const mondHoehe = (d) => Astro.mond(d, BREITE, LAENGE);
+
+/* Mond im Modus "nacht": immer vom Sonnenuntergang bis zum nächsten Sonnenaufgang */
+function nachtBogen(t) {
+  if (sonnenHoehe(t) > SONNE_H0) return null;
+  const neg = (d) => -sonnenHoehe(d);
+  const b = bogen(neg, -SONNE_H0, t);
+  return b ? { anteil: b.anteil, maxHoehe: 45 } : null;
+}
+
+/* ---------- Farben des Himmels je nach Sonnenhöhe ---------- */
+const HIMMEL = [ // [Sonnenhöhe°, Farbe oben, Farbe unten]
+  [-18, [7, 9, 15],    [10, 13, 22]],
+  [-8,  [10, 14, 28],  [24, 22, 38]],
+  [-2,  [16, 22, 42],  [72, 42, 36]],
+  [4,   [22, 34, 58],  [96, 62, 44]],
+  [12,  [20, 38, 64],  [38, 56, 78]],
+  [40,  [18, 40, 70],  [32, 58, 86]]
+];
+function mische(a, b, f) { return a.map((v, i) => Math.round(v + (b[i] - v) * f)); }
+function himmelsfarben(h) {
+  if (h <= HIMMEL[0][0]) return [HIMMEL[0][1], HIMMEL[0][2]];
+  for (let i = 1; i < HIMMEL.length; i++) {
+    if (h <= HIMMEL[i][0]) {
+      const [h0, o0, u0] = HIMMEL[i - 1], [h1, o1, u1] = HIMMEL[i];
+      const f = (h - h0) / (h1 - h0);
+      return [mische(o0, o1, f), mische(u0, u1, f)];
+    }
+  }
+  const l = HIMMEL[HIMMEL.length - 1]; return [l[1], l[2]];
+}
+const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+/* ---------- Zeichnen ---------- */
+const leinwand = document.getElementById("himmel");
+const ctx = leinwand.getContext("2d");
+let B = 0, H = 0;
+const sterne = Array.from({ length: 140 }, (_, i) => {
+  const r = (n) => { const x = Math.sin(i * 12.9898 + n * 78.233) * 43758.5453; return x - Math.floor(x); };
+  return { x: r(1), y: r(2) * 0.85, g: 0.4 + r(3) * 1.1, a: 0.25 + r(4) * 0.6 };
+});
+
+function groesseAnpassen() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  B = window.innerWidth; H = window.innerHeight;
+  leinwand.width = Math.round(B * dpr); leinwand.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function position(b, radius) {
+  const horizont = H * 0.94;
+  const spielraum = H * 0.78 * Math.min(1, Math.max(0.62, b.maxHoehe / 62));
+  return {
+    x: -radius + b.anteil * (B + 2 * radius),
+    y: horizont - Math.sin(Math.PI * b.anteil) * spielraum
+  };
+}
+
+function zeichneSonne(p, r, hoehe) {
+  const tief = Math.max(0, Math.min(1, 1 - hoehe / 12)); // nah am Horizont: wärmer
+  const kern = mische([255, 238, 196], [255, 160, 90], tief);
+  const glanz = ctx.createRadialGradient(p.x, p.y, r * 0.5, p.x, p.y, r * 6);
+  glanz.addColorStop(0, rgb(kern, 0.22));
+  glanz.addColorStop(1, rgb(kern, 0));
+  ctx.fillStyle = glanz; ctx.beginPath(); ctx.arc(p.x, p.y, r * 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = rgb(kern, 0.72); ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+}
+
+function zeichneMond(p, r, phase) {
+  const glanz = ctx.createRadialGradient(p.x, p.y, r, p.x, p.y, r * 4);
+  glanz.addColorStop(0, `rgba(210,220,240,${0.12 * phase.anteil + 0.03})`);
+  glanz.addColorStop(1, "rgba(210,220,240,0)");
+  ctx.fillStyle = glanz; ctx.beginPath(); ctx.arc(p.x, p.y, r * 4, 0, Math.PI * 2); ctx.fill();
+
+  // dunkler Teil, ganz leicht sichtbar
+  ctx.fillStyle = "rgba(200,210,230,0.05)";
+  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+
+  // beleuchteter Teil
+  const k = phase.anteil, rx = r * Math.abs(1 - 2 * k);
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  if (!phase.zunehmend) ctx.scale(-1, 1); // abnehmend: links beleuchtet
+  ctx.beginPath();
+  ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
+  if (k >= 0.5) ctx.ellipse(0, 0, rx, r, 0, Math.PI / 2, Math.PI * 1.5, false);
+  else ctx.ellipse(0, 0, rx, r, 0, Math.PI / 2, -Math.PI / 2, true);
+  ctx.fillStyle = "rgba(226,231,238,0.55)";
+  ctx.fill();
+  ctx.restore();
+}
+
+function zeichneHimmel(t) {
+  const hSonne = sonnenHoehe(t);
+  const [oben, unten] = himmelsfarben(hSonne);
+  const verlauf = ctx.createLinearGradient(0, 0, 0, H);
+  verlauf.addColorStop(0, rgb(oben));
+  verlauf.addColorStop(1, rgb(unten));
+  ctx.fillStyle = verlauf; ctx.fillRect(0, 0, B, H);
+
+  const r = Math.min(B, H) * 0.045;
+
+  // Sterne: nur wenn es dunkel genug ist
+  const sternLicht = Math.max(0, Math.min(1, (-hSonne - 4) / 8));
+  if (sternLicht > 0) {
+    for (const s of sterne) {
+      ctx.fillStyle = `rgba(220,228,245,${s.a * sternLicht})`;
+      ctx.beginPath(); ctx.arc(s.x * B, s.y * H, s.g, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Sonne
+  const bs = bogen(sonnenHoehe, SONNE_H0, t);
+  if (bs) zeichneSonne(position(bs, r), r, hSonne);
+
+  // Mond
+  // Mond nur zeigen, wenn die Sonne untergegangen ist: tagsüber gehört der Himmel der Sonne
+  const bm = MOND_MODUS === "nacht" ? nachtBogen(t) : bogen(mondHoehe, MOND_H0, t);
+  if (bm && hSonne <= SONNE_H0) zeichneMond(position(bm, r * 0.8), r * 0.8, Astro.mondPhase(t));
+}
+
+/* Zeitraffer zum Ausprobieren: index.html#zeitraffer */
+const zeitraffer = location.hash === "#zeitraffer";
+const rafferStart = Date.now();
+function himmelsZeit() {
+  if (!zeitraffer) return new Date();
+  const heute = new Date(); heute.setHours(0, 0, 0, 0);
+  return new Date(heute.valueOf() + ((Date.now() - rafferStart) * 1800) % 864e5);
+}
+
+function himmelAktualisieren() { zeichneHimmel(himmelsZeit()); }
+groesseAnpassen();
+himmelAktualisieren();
+window.addEventListener("resize", () => { groesseAnpassen(); himmelAktualisieren(); });
+if (zeitraffer) {
+  (function schleife() { himmelAktualisieren(); requestAnimationFrame(schleife); })();
+} else {
+  setInterval(himmelAktualisieren, 30 * 1000);
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") himmelAktualisieren(); });
+
+
+/* =====================================================================
+   ARK Cluster: Live-Status vom Server-PC (über Tailscale Funnel)
+   ===================================================================== */
+const ARK_API = ""; // Adresse des Statusdienstes, z. B. "https://server.tailxxxx.ts.net/status"
+const ARK_ALLE_SEKUNDEN = 60;
+
+function arkZeigen(daten) {
+  const liste = daten.server || [];
+  const online = liste.filter((s) => s.online).length;
+  const spieler = liste.reduce((n, s) => n + (s.spielerzahl || 0), 0);
+
+  const summe = $("arkSumme");
+  summe.classList.remove("fehler");
+  summe.innerHTML = `<b>${online}/${liste.length}</b> online · <b>${spieler}</b> Spieler`;
+
+  let punkte = "";
+  for (const s of liste) {
+    const zahl = s.online && s.spielerzahl > 0 ? `<span class="n">${s.spielerzahl}</span>` : "";
+    const nr = s.id.replace(/\D/g, "");
+    punkte += `<div class="ampel" title="${s.id}"><span class="punkt${s.online ? "" : " aus"}">${zahl}</span>${nr}</div>`;
+  }
+  $("ampeln").innerHTML = punkte;
+
+  // Liste nur für Server, auf denen gerade jemand spielt (offline zeigt der rote Punkt)
+  const box = $("arkListe");
+  box.innerHTML = "";
+  for (const s of liste.filter((s) => s.online && s.spielerzahl > 0)) {
+    const zeile = document.createElement("div");
+    zeile.className = "ark-zeile";
+    const kennung = document.createElement("span");
+    kennung.className = "s";
+    kennung.textContent = s.id;
+    const text = document.createElement("span");
+    text.className = "w";
+    const wer = s.spieler && s.spieler.length ? s.spieler.join(", ") : `${s.spielerzahl} Spieler`;
+    text.textContent = (s.karte ? s.karte + " · " : "") + wer;
+    zeile.append(kennung, text);
+    box.appendChild(zeile);
+  }
+}
+
+function arkFehler() {
+  const summe = $("arkSumme");
+  summe.classList.add("fehler");
+  summe.textContent = "Server-PC nicht erreichbar";
+  $("ampeln").querySelectorAll(".punkt").forEach((p) => { p.className = "punkt unbekannt"; p.innerHTML = ""; });
+  $("arkListe").innerHTML = "";
+}
+
+async function arkLaden() {
+  try {
+    const antwort = await fetch(ARK_API + (ARK_API.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" });
+    if (!antwort.ok) throw new Error("HTTP " + antwort.status);
+    const daten = await antwort.json();
+    // Daten älter als 5 Minuten: Dienst hängt
+    if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 5 * 60 * 1000) throw new Error("veraltet");
+    arkZeigen(daten);
+  } catch (e) {
+    arkFehler();
+  }
+}
+
+if (ARK_API) {
+  $("ark").hidden = false;
+  arkLaden();
+  setInterval(arkLaden, ARK_ALLE_SEKUNDEN * 1000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") arkLaden(); });
+}
+</script>
+</body>
+</html>

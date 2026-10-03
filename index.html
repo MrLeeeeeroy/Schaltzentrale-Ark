@@ -610,6 +610,12 @@ function stundenSchluessel(d) {
 
 let letzteDaten = null;
 
+// Fußzeile: wann Wetter und Server-Daten zuletzt aktualisiert wurden
+let standWetter = "", standServer = "";
+function standZeigen() {
+  $("stand").textContent = [standServer, standWetter].filter(Boolean).join(" · ");
+}
+
 async function wetterLaden() {
   const url = "https://api.open-meteo.com/v1/forecast"
     + `?latitude=${BREITE}&longitude=${LAENGE}`
@@ -689,8 +695,8 @@ function wetterZeigen(daten, veraltet) {
   $("stunden").innerHTML = html;
 
   const jetzt = new Date();
-  $("stand").textContent = (veraltet ? "Keine Verbindung · letzter Stand " : "Stand ")
-    + zwei(jetzt.getHours()) + ":" + zwei(jetzt.getMinutes());
+  standWetter = (veraltet ? "Wetter ohne Verbindung, letzter Stand " : "Wetter ") + zwei(jetzt.getHours()) + ":" + zwei(jetzt.getMinutes());
+  standZeigen();
 }
 
 wetterLaden();
@@ -1019,6 +1025,8 @@ function arkFehler() {
   $("arkListe").innerHTML = "";
   rootZeigen(null, null);
   piholeZeigen(null);
+  standServer = "Server keine Daten";
+  standZeigen();
 }
 
 async function arkLaden() {
@@ -1029,6 +1037,9 @@ async function arkLaden() {
     // Daten älter als 7 Minuten (drei Abfragen verpasst): Dienst hängt
     if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 7 * 60 * 1000) throw new Error("veraltet");
     arkZeigen(daten);
+    const st = new Date(daten.stand);
+    standServer = "Server " + zwei(st.getHours()) + ":" + zwei(st.getMinutes());
+    standZeigen();
     rootZeigen(daten.system, daten.strom);
     piholeZeigen(daten.pihole);
   } catch (e) {

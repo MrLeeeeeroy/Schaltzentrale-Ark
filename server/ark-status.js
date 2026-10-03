@@ -217,9 +217,9 @@ function heuteSchluessel(d = new Date()) {
 }
 
 async function stromAbfragen() {
-  if (!SHELLY_IP) return null;
-  const messung = await shellyLesen();
-  if (!messung || typeof messung.watt !== 'number' || typeof messung.zaehlerWh !== 'number') return null;
+  // Ohne Shelly (oder wenn sie nicht antwortet) läuft die Rechnung mit 0 W weiter
+  const messung = SHELLY_IP ? await shellyLesen() : null;
+  const gueltig = !!(messung && typeof messung.watt === 'number' && typeof messung.zaehlerWh === 'number');
 
   const jetzt = new Date();
   const tag = heuteSchluessel(jetzt);
@@ -227,11 +227,13 @@ async function stromAbfragen() {
 
   // Verbrauch seit der letzten Messung aufaddieren
   let neu = 0;
-  if (typeof energie.letzterZaehlerWh === 'number') {
-    neu = messung.zaehlerWh - energie.letzterZaehlerWh;
-    if (neu < 0) neu = messung.zaehlerWh; // Zähler der Steckdose wurde zurückgesetzt
+  if (gueltig) {
+    if (typeof energie.letzterZaehlerWh === 'number') {
+      neu = messung.zaehlerWh - energie.letzterZaehlerWh;
+      if (neu < 0) neu = messung.zaehlerWh; // Zähler der Steckdose wurde zurückgesetzt
+    }
+    energie.letzterZaehlerWh = messung.zaehlerWh;
   }
-  energie.letzterZaehlerWh = messung.zaehlerWh;
 
   if (energie.tag !== tag) { energie.tag = tag; energie.tagWh = 0; }
   if (energie.monat !== monat) { energie.monat = monat; energie.monatWh = 0; energie.monatStart = jetzt.toISOString(); }
@@ -239,20 +241,24 @@ async function stromAbfragen() {
   energie.monatWh += neu;
   energieSpeichern();
 
-  // Hochrechnung aus dem Durchschnitt seit Beginn der Messung in diesem Monat
+  const watt = gueltig ? messung.watt : 0;
+
+  // Hochrechnung: Durchschnitt seit Messbeginn im Monat, in der ersten Stunde die aktuelle Leistung
   const [j, m] = monat.split('-').map(Number);
   const stundenImMonat = new Date(j, m, 0).getDate() * 24;
   const gemesseneStunden = (jetzt - new Date(energie.monatStart)) / 3600e3;
-  // In der ersten Stunde gibt es noch keinen Durchschnitt: dann mit der aktuellen Leistung rechnen
-  const mittlereWatt = gemesseneStunden >= 1 ? energie.monatWh / gemesseneStunden : messung.watt;
+  const mittlereWatt = gueltig && gemesseneStunden >= 1 && energie.monatWh > 0
+    ? energie.monatWh / gemesseneStunden
+    : watt;
   const hochrechnung = mittlereWatt * stundenImMonat / 1000 * STROMPREIS;
 
   const runde = (x, n = 2) => Math.round(x * 10 ** n) / 10 ** n;
   return {
-    watt: Math.round(messung.watt),
+    gemessen: gueltig,                       // false = keine Shelly-Daten, Werte stehen auf 0 W
+    watt: Math.round(watt),
     heute: { kwh: runde(energie.tagWh / 1000, 1), euro: runde(energie.tagWh / 1000 * STROMPREIS) },
     monat: { kwh: runde(energie.monatWh / 1000, 1), euro: runde(energie.monatWh / 1000 * STROMPREIS) },
-    hochrechnungEuro: hochrechnung === null ? null : Math.round(hochrechnung),
+    hochrechnungEuro: Math.round(hochrechnung),
     preisProKwh: STROMPREIS
   };
 }
@@ -283,7 +289,7 @@ async function allesAbfragen() {
   const on = ergebnisse.filter((e) => e.online).length;
   const sp = ergebnisse.reduce((n, e) => n + (e.spielerzahl || 0), 0);
   const extra = (system ? ` | CPU ${system.cpuProzent} % RAM ${system.ramProzent} % ${LAUFWERK} ${system.laufwerk.prozent} %` : '')
-    + (strom ? ` | ${strom.watt} W` : (SHELLY_IP ? ' | Shelly nicht erreichbar' : ''));
+    + (strom ? ` | ${strom.watt} W${strom.gemessen ? '' : (SHELLY_IP ? ' (Shelly nicht erreichbar)' : ' (keine Shelly)')}` : '');
   console.log(`[${new Date().toLocaleTimeString('de-DE')}] ${on}/${ergebnisse.length} online, ${sp} Spieler${extra}`);
 }
 

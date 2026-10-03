@@ -309,7 +309,7 @@ body.nacht #himmel { opacity: 0.6; }
     <div class="hinweis wind" id="windHinweis" hidden></div>
     <div class="stunden" id="stunden"></div>
 
-    <div class="ark" id="ark" hidden>
+    <div class="ark" id="ark">
       <div class="ark-kopf">
         <span class="label">ARK Cluster</span>
         <span class="ark-summe" id="arkSumme">wird geladen …</span>
@@ -318,16 +318,16 @@ body.nacht #himmel { opacity: 0.6; }
       <div class="ark-liste" id="arkListe"></div>
     </div>
 
-    <div class="root" id="root" hidden>
+    <div class="root" id="root">
       <div class="root-kopf">
         <span class="label">Root-Server</span>
-        <span class="root-lauf" id="rootLauf"></span>
+        <span class="root-lauf" id="rootLauf">wird geladen …</span>
       </div>
-      <div class="strom" id="strom" hidden>
-        <div class="watt"><span id="watt">–</span><small>W</small></div>
+      <div class="strom" id="strom">
+        <div class="watt"><span id="watt">0</span><small>W</small></div>
         <div class="kosten">
           <span class="k">Heute</span><span class="k" id="monatName">Monat</span><span class="k">Hochrechnung</span>
-          <span class="v" id="kostenHeute">–</span><span class="v" id="kostenMonat">–</span><span class="v" id="kostenProg">–</span>
+          <span class="v" id="kostenHeute">0,00 € <small>0,0 kWh</small></span><span class="v" id="kostenMonat">0,00 € <small>0,0 kWh</small></span><span class="v" id="kostenProg">≈ 0 €</span>
         </div>
       </div>
       <div class="last">
@@ -910,32 +910,33 @@ function laufzeitText(sek) {
   return `läuft seit ${h} Std., ${m} Min.`;
 }
 
-function balkenSetzen(wertId, balkenId, prozent) {
+// Grenzen: [gelb ab, rot ab] in Prozent
+const GRENZEN = { cpu: [80, 95], ram: [80, 95], laufwerk: [80, 90] };
+
+function balkenSetzen(wertId, balkenId, prozent, grenzen) {
   const balken = $(balkenId);
-  if (typeof prozent !== "number") { $(wertId).textContent = "–"; balken.style.width = "0"; return; }
+  if (typeof prozent !== "number") { $(wertId).textContent = "–"; balken.style.width = "0"; balken.className = "fuell"; return; }
   $(wertId).textContent = prozent + " %";
   balken.style.width = Math.min(100, Math.max(0, prozent)) + "%";
-  balken.className = "fuell" + (prozent >= 95 ? " krit" : prozent >= 80 ? " warn" : "");
+  balken.className = "fuell" + (prozent >= grenzen[1] ? " krit" : prozent >= grenzen[0] ? " warn" : "");
 }
 
-function rootZeigen(system, strom) {
-  const box = $("root");
-  if (!system) { box.hidden = true; return; }
-  box.hidden = false;
-  $("rootLauf").textContent = laufzeitText(system.laufzeitSek);
-  balkenSetzen("cpuWert", "cpuBalken", system.cpuProzent);
-  balkenSetzen("ramWert", "ramBalken", system.ramProzent);
-  $("lwName").textContent = (system.laufwerk && system.laufwerk.name) || "E:";
-  balkenSetzen("lwWert", "lwBalken", system.laufwerk && system.laufwerk.prozent);
+const STROM_LEER = { watt: 0, heute: { kwh: 0, euro: 0 }, monat: { kwh: 0, euro: 0 }, hochrechnungEuro: 0 };
 
-  // Strom erscheint erst, wenn die Shelly-Steckdose eingebunden ist
-  if (!strom) { $("strom").hidden = true; return; }
-  $("strom").hidden = false;
-  $("watt").textContent = strom.watt;
+function rootZeigen(system, strom) {
+  $("rootLauf").textContent = system ? laufzeitText(system.laufzeitSek) : "Server offline";
+  balkenSetzen("cpuWert", "cpuBalken", system && system.cpuProzent, GRENZEN.cpu);
+  balkenSetzen("ramWert", "ramBalken", system && system.ramProzent, GRENZEN.ram);
+  $("lwName").textContent = (system && system.laufwerk && system.laufwerk.name) || "E:";
+  balkenSetzen("lwWert", "lwBalken", system && system.laufwerk && system.laufwerk.prozent, GRENZEN.laufwerk);
+
+  // Strom: ohne Shelly-Daten stehen alle Werte auf 0
+  const s = strom || STROM_LEER;
+  $("watt").textContent = s.watt;
   $("monatName").textContent = new Date().toLocaleDateString("de-DE", { month: "long" });
-  $("kostenHeute").innerHTML = `${euro(strom.heute.euro)} <small>${kwh(strom.heute.kwh)}</small>`;
-  $("kostenMonat").innerHTML = `${euro(strom.monat.euro)} <small>${kwh(strom.monat.kwh)}</small>`;
-  $("kostenProg").textContent = strom.hochrechnungEuro === null ? "–" : `≈ ${strom.hochrechnungEuro} €`;
+  $("kostenHeute").innerHTML = `${euro(s.heute.euro)} <small>${kwh(s.heute.kwh)}</small>`;
+  $("kostenMonat").innerHTML = `${euro(s.monat.euro)} <small>${kwh(s.monat.kwh)}</small>`;
+  $("kostenProg").textContent = `≈ ${s.hochrechnungEuro ?? 0} €`;
 }
 
 function arkFehler() {
@@ -945,7 +946,7 @@ function arkFehler() {
   summe.textContent = "Server offline";
   $("ampeln").querySelectorAll(".punkt").forEach((p) => { p.className = "punkt aus"; p.innerHTML = ""; });
   $("arkListe").innerHTML = "";
-  $("root").hidden = true;
+  rootZeigen(null, null);
 }
 
 async function arkLaden() {

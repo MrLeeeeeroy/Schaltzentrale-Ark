@@ -217,7 +217,7 @@ body {
 .punkt { width: 13px; height: 13px; border-radius: 50%; position: relative;
   background: var(--an); box-shadow: 0 0 8px color-mix(in srgb, var(--an) 55%, transparent); }
 .punkt.aus { background: var(--aus); box-shadow: 0 0 8px color-mix(in srgb, var(--aus) 55%, transparent); }
-.punkt.unbekannt { background: var(--line); box-shadow: none; }
+.punkt.unbekannt { background: color-mix(in srgb, var(--muted) 45%, transparent); box-shadow: none; }
 .punkt .n { position: absolute; top: -7px; right: -9px; font-family: var(--font-body); font-size: 0.6rem; font-weight: 500;
   color: var(--bg); background: var(--fg); border-radius: 7px; padding: 0 3px; line-height: 1.25; text-shadow: none; }
 .ark-liste { display: grid; gap: 0.35rem; font-size: 0.88rem; }
@@ -878,8 +878,21 @@ async function arkLaden() {
   }
 }
 
-if (ARK_API) {
-  $("ark").hidden = false;
+// Platzhalter: 20 graue Punkte, bis echte Daten da sind
+(function arkPlatzhalter() {
+  let punkte = "";
+  for (let i = 1; i <= 20; i++) {
+    punkte += `<div class="ampel"><span class="punkt unbekannt"></span>${String(i).padStart(2, "0")}</div>`;
+  }
+  $("ampeln").innerHTML = punkte;
+})();
+$("ark").hidden = false;
+
+if (!ARK_API) {
+  const summe = $("arkSumme");
+  summe.classList.add("fehler");
+  summe.textContent = "Statusdienst noch nicht verbunden";
+} else {
   arkLaden();
   setInterval(arkLaden, ARK_ALLE_SEKUNDEN * 1000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") arkLaden(); });

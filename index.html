@@ -10,7 +10,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Schaltzentrale">
-<meta name="theme-color" content="#0c0e11">
+<meta name="theme-color" content="#0c0e11" id="themaFarbe">
 <link rel="apple-touch-icon" href="icon.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -921,6 +921,21 @@ function zeichneMond(p, r, phase) {
   ctx.restore();
 }
 
+/* Ränder außerhalb des Himmels (z. B. der Streifen am Home-Balken der iPad-Web-App)
+   in der Himmelsfarbe einfärben statt schwarz. Nachts wird wie beim Himmel abgedunkelt. */
+let letzteRandFarbe = "";
+function randFarbeSetzen(oben, unten) {
+  const nacht = document.body.classList.contains("nacht");
+  const f = (c) => nacht ? c.map((v, i) => Math.round(v * 0.6 + [12, 14, 17][i] * 0.4)) : c;
+  const u = rgb(f(unten)), o = rgb(f(oben));
+  if (u + o === letzteRandFarbe) return;
+  letzteRandFarbe = u + o;
+  document.documentElement.style.background = `linear-gradient(${o}, ${u}) fixed, ${u}`;
+  document.body.style.background = "transparent";
+  const meta = document.getElementById("themaFarbe");
+  if (meta) meta.setAttribute("content", "#" + f(unten).map((v) => v.toString(16).padStart(2, "0")).join(""));
+}
+
 function zeichneHimmel(t) {
   const hSonne = sonnenHoehe(t);
   const [oben, unten] = himmelsfarben(hSonne);
@@ -928,6 +943,7 @@ function zeichneHimmel(t) {
   verlauf.addColorStop(0, rgb(oben));
   verlauf.addColorStop(1, rgb(unten));
   ctx.fillStyle = verlauf; ctx.fillRect(0, 0, B, H);
+  randFarbeSetzen(oben, unten);
 
   const r = Math.min(B, H) * 0.045;
 

@@ -285,6 +285,48 @@ body {
   .buehne { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 }
 
+
+/* ---------- Countdown-Band oben links (45°) ---------- */
+.band {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 2s ease, filter 2s ease;
+}
+.band-streifen {
+  position: absolute;
+  top: 88px; left: -248px;   /* wird per Skript exakt ausgerichtet: Mitte = halbe Strecke Bildecke → Zifferblatt bei 10:30 */
+  width: 700px;
+  transform: rotate(-45deg);
+  padding: 0.2rem 0;
+  background: linear-gradient(90deg, rgba(240,181,74,0.06), rgba(240,181,74,0.2) 50%, rgba(240,181,74,0.06));
+  border-top: 1px solid rgba(240,181,74,0.55);
+  border-bottom: 1px solid rgba(240,181,74,0.55);
+  box-shadow: 0 0 24px rgba(240,181,74,0.12);
+  color: var(--fg);
+}
+/* Logo + Timer als Gruppe mittig auf halber Strecke Bildecke → Zifferblatt bei 10:30 */
+.band-inhalt { display: flex; justify-content: center; }
+.band-gruppe { display: flex; align-items: center; gap: 0.3rem; }
+.band-logo { height: 1.75rem; width: auto; flex: none; filter: drop-shadow(0 0 6px rgba(0,0,0,0.55)); }
+/* Timer ≈ 70 % der Logohöhe */
+.band-zeit { display: flex; align-items: baseline; gap: 0.28rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.band-zeit b { font-weight: 300; font-size: 1.15rem; }
+.band-zeit i { font-style: normal; font-family: var(--font-label); font-size: 0.52rem; color: var(--muted); margin-left: 0.12rem; letter-spacing: 0.06em; }
+.band-zeit.blinkt { animation: wowBlinken 1s steps(2, jump-none) infinite; color: var(--sun); }
+@keyframes wowBlinken { 0% { opacity: 1; } 100% { opacity: 0.15; } }
+@media (prefers-reduced-motion: reduce) { .band-zeit.blinkt { animation-duration: 2s; } }
+/* Hochformat / Handy: Countdown als ruhige Zeile über der Uhr */
+@media (orientation: portrait), (max-width: 760px) {
+  .band { position: relative; inset: auto; overflow: visible; padding: max(16px, env(safe-area-inset-top)) 16px 0; }
+  .band-streifen { position: static; transform: none; width: auto; margin: 0 auto; max-width: 420px; border-radius: 10px;
+    border: 1px solid rgba(240,181,74,0.45); }
+  .band-gruppe { gap: 0.5rem; }
+}
+body.nacht .band { opacity: 0.38; filter: sepia(0.35) saturate(0.8); }
+
 /* Symbolfarben */
 .i-sonne { color: var(--sun); }
 .i-mond, .i-wolke, .i-nebel { color: var(--muted); }
@@ -316,6 +358,16 @@ body.nacht #himmel { opacity: 0.6; }
 </head>
 <body>
 <canvas id="himmel" aria-hidden="true"></canvas>
+<div class="band" id="band" aria-label="Countdown WoW Forever">
+  <div class="band-streifen">
+    <div class="band-inhalt">
+      <div class="band-gruppe" id="bandGruppe">
+      <img class="band-logo" src="wow-logo.png" alt="World of Warcraft Forever">
+      <div class="band-zeit" id="bandZeit"></div>
+      </div>
+    </div>
+  </div>
+</div>
 <main class="buehne" id="buehne">
   <section class="uhr" aria-label="Uhrzeit">
     <svg class="zifferblatt" id="zifferblatt" viewBox="-110 -110 220 220" role="img" aria-label="Analoge Uhr">
@@ -1064,6 +1116,45 @@ if (!ARK_API) {
   setInterval(arkLaden, ARK_ALLE_SEKUNDEN * 1000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") arkLaden(); });
 }
+
+/* ---------- Countdown WoW Forever ---------- */
+const WOW_ZIEL = new Date("2026-11-05T00:01:00+01:00"); // 05.11.2026 00:01 Berliner Zeit (Winterzeit)
+const WOW_ENDE = new Date("2026-11-06T00:00:00+01:00"); // ab 06.11. wird das Band ausgeblendet
+function wowTick() {
+  const jetzt = new Date();
+  const band = $("band"), box = $("bandZeit");
+  if (jetzt >= WOW_ENDE) { band.hidden = true; return; }
+  const rest = Math.max(0, Math.floor((WOW_ZIEL - jetzt) / 1000));
+  const t = Math.floor(rest / 86400), h = Math.floor(rest % 86400 / 3600), m = Math.floor(rest % 3600 / 60), s = rest % 60;
+  box.innerHTML = `<span><b>${zwei(t)}</b><i>T</i></span><span><b>${zwei(h)}</b><i>STD</i></span><span><b>${zwei(m)}</b><i>MIN</i></span><span><b>${zwei(s)}</b><i>SEK</i></span>`;
+  box.classList.toggle("blinkt", rest === 0); // abgelaufen: einen Tag lang blinken
+}
+wowTick();
+setInterval(wowTick, 1000);
+/* Band exakt ausrichten: Mitte von Logo + Timer auf halber Strecke zwischen
+   linker oberer Bildecke und dem Rand des Zifferblatts bei 10:30 */
+function bandAusrichten() {
+  const band = $("band"), st = band.querySelector(".band-streifen"), gruppe = $("bandGruppe");
+  if (band.hidden || getComputedStyle(st).position !== "absolute") { st.style.left = st.style.top = ""; return; }
+  const svg = $("zifferblatt"), m = svg.getScreenCTM();
+  if (!m) return;
+  const winkel = (10.5 * 30 - 90) * Math.PI / 180;
+  const p = svg.createSVGPoint(); p.x = Math.cos(winkel) * 100; p.y = Math.sin(winkel) * 100;
+  const rand = p.matrixTransform(m);
+  const zielX = rand.x / 2, zielY = rand.y / 2;
+  for (let i = 0; i < 2; i++) {
+    const g = gruppe.getBoundingClientRect();
+    const cs = getComputedStyle(st);
+    st.style.left = (parseFloat(cs.left) + zielX - (g.left + g.width / 2)) + "px";
+    st.style.top = (parseFloat(cs.top) + zielY - (g.top + g.height / 2)) + "px";
+  }
+}
+window.addEventListener("resize", bandAusrichten);
+window.addEventListener("orientationchange", () => setTimeout(bandAusrichten, 300));
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(bandAusrichten);
+$("band").querySelector(".band-logo").addEventListener("load", bandAusrichten);
+bandAusrichten();
+
 </script>
 </body>
 </html>

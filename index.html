@@ -333,11 +333,12 @@ body.nacht .band { opacity: 0.38; filter: sepia(0.35) saturate(0.8); }
 
 /* ---------- Stromzeiträume im Kopf des Root-Server-Bereichs: Vorjahr | aktuell ---------- */
 .root-kopf { align-items: center; flex-wrap: nowrap; gap: 0.6rem; }
-.root-kopf > .label, .root-kopf > .root-lauf { white-space: nowrap; }
-.vertraege { flex: 1; min-width: 0; display: flex; justify-content: center; align-items: center; gap: 0.8rem; }
-.vertrag { display: grid; grid-template-columns: auto auto; column-gap: 0.45rem; row-gap: 0.05rem; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.vertrag .vz { font-family: var(--font-label); font-size: 0.62rem; letter-spacing: 0.06em; color: var(--muted); align-self: center; }
-.vertrag .vw { font-size: 0.85rem; font-weight: 500; color: var(--fg); text-align: right; }
+.root-titel { display: grid; gap: 0.15rem; white-space: nowrap; }
+.root-titel .root-lauf { font-size: 0.72rem; }
+.vertraege { flex: 1; min-width: 0; display: flex; justify-content: flex-end; align-items: center; gap: 0.6rem; }
+.vertrag { display: grid; grid-template-columns: auto auto; column-gap: 0.35rem; row-gap: 0.05rem; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vertrag .vz { font-family: var(--font-label); font-size: 0.56rem; letter-spacing: 0.04em; color: var(--muted); align-self: center; }
+.vertrag .vw { font-size: 0.78rem; font-weight: 500; color: var(--fg); text-align: right; }
 .vertrag.alt .vw { color: var(--muted); font-weight: 400; }
 .vertrag-trenner { width: 1px; align-self: stretch; background: var(--line); }
 @media (max-width: 760px) {
@@ -439,7 +440,10 @@ body.nacht #himmel { opacity: 0.6; }
 
     <div class="root" id="root">
       <div class="root-kopf">
-        <span class="label">Root-Server</span>
+        <span class="root-titel">
+          <span class="label">Root-Server</span>
+          <span class="root-lauf" id="rootLauf">wird geladen …</span>
+        </span>
         <span class="vertraege">
           <span class="vertrag alt" title="Vorjahr">
             <span class="vz" id="vjVon">–</span><span class="vw" id="vjKwh">–</span>
@@ -451,7 +455,6 @@ body.nacht #himmel { opacity: 0.6; }
             <span class="vz" id="vaBis">–</span><span class="vw" id="vaEuro">–</span>
           </span>
         </span>
-        <span class="root-lauf" id="rootLauf">wird geladen …</span>
       </div>
       <div class="strom" id="strom">
         <div class="watt"><span id="watt">0</span><small>W</small></div>
@@ -889,9 +892,9 @@ const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 const leinwand = document.getElementById("himmel");
 const ctx = leinwand.getContext("2d");
 let B = 0, H = 0;
-const sterne = Array.from({ length: 140 }, (_, i) => {
+const sterne = Array.from({ length: 170 }, (_, i) => {
   const r = (n) => { const x = Math.sin(i * 12.9898 + n * 78.233) * 43758.5453; return x - Math.floor(x); };
-  return { x: r(1), y: r(2) * 0.85, g: 0.4 + r(3) * 1.1, a: 0.25 + r(4) * 0.6 };
+  return { x: r(1), y: r(2), g: 0.4 + r(3) * 1.1, a: 0.25 + r(4) * 0.6 };
 });
 
 function groesseAnpassen() {
@@ -1065,7 +1068,7 @@ const kwh = (x) => x.toLocaleString("de-DE", { minimumFractionDigits: 1, maximum
 function laufzeitText(sek) {
   const t = Math.floor(sek / 86400), h = Math.floor((sek % 86400) / 3600), m = Math.floor((sek % 3600) / 60);
   if (t > 0) return `läuft seit ${t} ${t === 1 ? "Tag" : "Tagen"}, ${h} Std.`;
-  return `läuft seit ${h} Std., ${m} Min.`;
+  return `läuft seit ${h} Std. ${m} Min.`;
 }
 
 // Grenzen: [gelb ab, rot ab] in Prozent

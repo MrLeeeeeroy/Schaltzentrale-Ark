@@ -1147,7 +1147,7 @@ function arkFehler() {
 
 async function arkLaden() {
   try {
-    const antwort = await fetch(ARK_API + (ARK_API.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" });
+    const antwort = await fetch(ARK_API + (ARK_API.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store", signal: AbortSignal.timeout(15000) });
     if (!antwort.ok) throw new Error("HTTP " + antwort.status);
     const daten = await antwort.json();
     // Daten älter als 7 Minuten (drei Abfragen verpasst): Dienst hängt
@@ -1165,7 +1165,7 @@ async function arkLaden() {
 // Pi-hole kommt direkt vom Raspberry Pi – unabhängig vom Root-Server
 async function piholeLaden() {
   try {
-    const antwort = await fetch(PIHOLE_API + "?t=" + Date.now(), { cache: "no-store" });
+    const antwort = await fetch(PIHOLE_API + "?t=" + Date.now(), { cache: "no-store", signal: AbortSignal.timeout(15000) });
     if (!antwort.ok) throw new Error("HTTP " + antwort.status);
     const daten = await antwort.json();
     if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 7 * 60 * 1000) throw new Error("veraltet");

@@ -1085,7 +1085,42 @@ function balkenSetzen(wertId, balkenId, prozent, grenzen) {
 
 const STROM_LEER = { watt: 0, heute: { kwh: 0, euro: 0 }, monat: { kwh: 0, euro: 0 }, hochrechnungEuro: 0 };
 
+// Letzter bekannter Monats- und Zeitraumverbrauch – bleibt sichtbar, wenn der Root-Server aus ist
+const monatSchluessel = (d = new Date()) => d.getFullYear() + "-" + (d.getMonth() + 1);
+let letzterStrom = null;
+try { letzterStrom = JSON.parse(localStorage.getItem("letzterStrom")); } catch (e) {}
+
+function stromMerken(strom) {
+  if (!strom || !strom.monat) return;
+  letzterStrom = { monatKey: monatSchluessel(), monat: strom.monat, vertrag: strom.vertrag || null };
+  try { localStorage.setItem("letzterStrom", JSON.stringify(letzterStrom)); } catch (e) {}
+}
+
+function stromOffline() {
+  // Heute, Watt und Hochrechnung auf 0 – Monat und Zeiträume aus dem letzten Stand
+  const s = { watt: 0, heute: { kwh: 0, euro: 0 }, monat: { kwh: 0, euro: 0 }, hochrechnungEuro: 0, vertrag: null };
+  if (!letzterStrom) return s;
+  if (letzterStrom.monatKey === monatSchluessel()) s.monat = letzterStrom.monat;
+  let v = letzterStrom.vertrag;
+  if (v && v.aktuell) {
+    // Neuer Zeitraum begonnen, während der Server aus war: aktuell rückt ins Vorjahr
+    const [t, m, j] = v.aktuell.bis.split(".").map(Number);
+    if (new Date() > new Date(2000 + j, m - 1, t, 23, 59, 59)) {
+      const [vt, vm] = v.aktuell.von.split(".");
+      const ende = new Date(2000 + j + 1, Number(vm) - 1, Number(vt) - 1);
+      const zw = (n) => String(n).padStart(2, "0");
+      v = {
+        vorjahr: v.aktuell,
+        aktuell: { von: `${vt}.${vm}.${zw(j)}`, bis: `${zw(ende.getDate())}.${zw(ende.getMonth() + 1)}.${zw(ende.getFullYear() % 100)}`, kwh: 0, euro: 0 }
+      };
+    }
+  }
+  s.vertrag = v;
+  return s;
+}
+
 function rootZeigen(system, strom) {
+  if (strom) stromMerken(strom);
   $("rootLauf").textContent = system ? laufzeitText(system.laufzeitSek) : "Server offline";
   balkenSetzen("cpuWert", "cpuBalken", system && system.cpuProzent, GRENZEN.cpu);
   balkenSetzen("ramWert", "ramBalken", system && system.ramProzent, GRENZEN.ram);
@@ -1093,7 +1128,7 @@ function rootZeigen(system, strom) {
   balkenSetzen("lwWert", "lwBalken", system && system.laufwerk && system.laufwerk.prozent, GRENZEN.laufwerk);
 
   // Strom: ohne Shelly-Daten stehen alle Werte auf 0
-  const s = strom || STROM_LEER;
+  const s = strom || (system ? STROM_LEER : stromOffline());
   $("watt").textContent = s.watt;
   $("monatName").textContent = new Date().toLocaleDateString("de-DE", { month: "long" });
   $("kostenHeute").innerHTML = `${euro(s.heute.euro)} <small>${kwh(s.heute.kwh)}</small>`;
@@ -1102,7 +1137,7 @@ function rootZeigen(system, strom) {
 
   // Stromzeiträume (Vorjahr | aktuell), Euro = kWh × Preis
   const kwh2 = (x) => x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "\u00a0kWh";
-  const v = strom && strom.vertrag;
+  const v = s.vertrag;
   for (const [pre, z] of [["vj", v && v.vorjahr], ["va", v && v.aktuell]]) {
     $(pre + "Von").textContent = z ? z.von : "–";
     $(pre + "Bis").textContent = z ? z.bis : "–";

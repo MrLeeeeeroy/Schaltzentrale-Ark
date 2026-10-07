@@ -259,7 +259,9 @@ async function stromAbfragen() {
   }
 
   if (energie.tag !== tag) { energie.tag = tag; energie.tagWh = 0; }
-  if (energie.monat !== monat) { energie.monat = monat; energie.monatWh = 0; energie.monatStart = jetzt.toISOString(); }
+  if (energie.monat !== monat) { energie.monat = monat; energie.monatWh = 0; energie.monatStart = jetzt.toISOString(); delete energie.messStart; }
+  // Beginn der echten Messung in diesem Monat (erst ab der ersten gültigen Shelly-Abfrage)
+  if (gueltig && !energie.messStart) energie.messStart = jetzt.toISOString();
   energie.tagWh += neu;
   energie.monatWh += neu;
   energieSpeichern();
@@ -269,7 +271,7 @@ async function stromAbfragen() {
   // Hochrechnung: Durchschnitt seit Messbeginn im Monat, in der ersten Stunde die aktuelle Leistung
   const [j, m] = monat.split('-').map(Number);
   const stundenImMonat = new Date(j, m, 0).getDate() * 24;
-  const gemesseneStunden = (jetzt - new Date(energie.monatStart)) / 3600e3;
+  const gemesseneStunden = energie.messStart ? (jetzt - new Date(energie.messStart)) / 3600e3 : 0;
   const mittlereWatt = gueltig && gemesseneStunden >= 1 && energie.monatWh > 0
     ? energie.monatWh / gemesseneStunden
     : watt;

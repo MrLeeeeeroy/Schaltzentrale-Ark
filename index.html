@@ -1024,6 +1024,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
    ===================================================================== */
 const ARK_API = "https://ark-server-2.tail667b26.ts.net/status"; // Adresse des Statusdienstes, z. B. "https://server.tailxxxx.ts.net/status"
 const ARK_ALLE_SEKUNDEN = 120; // alle 2 Minuten
+const PIHOLE_API = "https://pihole.tail667b26.ts.net/"; // eigener Statusdienst auf dem Raspberry Pi
 
 function arkZeigen(daten) {
   const liste = daten.server || [];
@@ -1140,7 +1141,6 @@ function arkFehler() {
   $("ampeln").querySelectorAll(".punkt").forEach((p) => { p.className = "punkt aus"; p.innerHTML = ""; });
   $("arkListe").innerHTML = "";
   rootZeigen(null, null);
-  piholeZeigen(null);
   standServer = "Server keine Daten";
   standZeigen();
 }
@@ -1157,11 +1157,26 @@ async function arkLaden() {
     standServer = "Server " + zwei(st.getHours()) + ":" + zwei(st.getMinutes());
     standZeigen();
     rootZeigen(daten.system, daten.strom);
-    piholeZeigen(daten.pihole);
   } catch (e) {
     arkFehler();
   }
 }
+
+// Pi-hole kommt direkt vom Raspberry Pi – unabhängig vom Root-Server
+async function piholeLaden() {
+  try {
+    const antwort = await fetch(PIHOLE_API + "?t=" + Date.now(), { cache: "no-store" });
+    if (!antwort.ok) throw new Error("HTTP " + antwort.status);
+    const daten = await antwort.json();
+    if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 7 * 60 * 1000) throw new Error("veraltet");
+    piholeZeigen(daten.pihole);
+  } catch (e) {
+    piholeZeigen(null);
+  }
+}
+piholeLaden();
+setInterval(piholeLaden, ARK_ALLE_SEKUNDEN * 1000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") piholeLaden(); });
 
 // Standard: 20 rote Punkte, bis echte Daten da sind
 (function arkPlatzhalter() {

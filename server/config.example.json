@@ -9,6 +9,10 @@
   "laufwerk": "E:",
   "shellyIp": "",
   "strompreisProKwh": 0.2917,
+  "vertragBeginn": "01.05",
+  "vertragStartwerteKwh": {
+    "2026": 0
+  },
   "piholeUrl": "http://192.168.x.x",
   "piholePasswort": "DEIN_PIHOLE_APP_PASSWORT",
   "karten": {

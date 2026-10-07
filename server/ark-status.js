@@ -39,6 +39,8 @@ const KARTEN = config.karten || {};                              // { "1": "New 
 const LAUFWERK = (config.laufwerk || 'E:').replace(/\\$/, '');   // überwachter Datenträger
 const SHELLY_IP = config.shellyIp || '';                         // leer = keine Strommessung
 const STROMPREIS = config.strompreisProKwh || 0.2917;            // Euro pro kWh
+const VERTRAG_BEGINN = config.vertragBeginn || '01.05';          // Tag.Monat, an dem jeder Vertragszeitraum beginnt
+const VERTRAG_STARTWERTE = config.vertragStartwerteKwh || {};    // { "2026": 175.90 } = kWh vor Messbeginn im Zeitraum ab 2026
 const PIHOLE_URL = (config.piholeUrl || '').replace(/\/+$/, '');  // z. B. http://192.168.x.x – leer = aus
 const PIHOLE_PASSWORT = config.piholePasswort || '';             // am besten ein App-Passwort
 // ==============================================================================
@@ -239,6 +241,26 @@ function heuteSchluessel(d = new Date()) {
   return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 }
 
+// ---------- Vertragszeiträume (z. B. 01.05. – 30.04.) ----------
+const [V_TAG, V_MONAT] = VERTRAG_BEGINN.split('.').map(Number);
+// Startjahr des Zeitraums, in dem ein Datum ("JJJJ-MM-TT", Berliner Zeit) liegt
+function vertragsJahr(tag) {
+  const [j, m, t] = tag.split('-').map(Number);
+  return (m > V_MONAT || (m === V_MONAT && t >= V_TAG)) ? j : j - 1;
+}
+function vertragInfo(jahr) {
+  const zwei = (n) => String(n).padStart(2, '0');
+  const ende = new Date(Date.UTC(jahr + 1, V_MONAT - 1, V_TAG) - 864e5);
+  const gemessenWh = (energie.vertraege && energie.vertraege[jahr]) || 0;
+  const kwh = (Number(VERTRAG_STARTWERTE[jahr]) || 0) + gemessenWh / 1000;
+  return {
+    von: `${zwei(V_TAG)}.${zwei(V_MONAT)}.${String(jahr).slice(2)}`,
+    bis: `${zwei(ende.getUTCDate())}.${zwei(ende.getUTCMonth() + 1)}.${String(jahr + 1).slice(2)}`,
+    kwh: Math.round(kwh * 100) / 100,
+    euro: Math.round(kwh * STROMPREIS * 100) / 100   // Euro immer aus kWh × Preis
+  };
+}
+
 async function stromAbfragen() {
   // Ohne Shelly (oder wenn sie nicht antwortet) läuft die Rechnung mit 0 W weiter
   const messung = SHELLY_IP ? await shellyLesen() : null;
@@ -264,6 +286,11 @@ async function stromAbfragen() {
   if (gueltig && !energie.messStart) energie.messStart = jetzt.toISOString();
   energie.tagWh += neu;
   energie.monatWh += neu;
+  // dauerhafter Zähler je Vertragszeitraum (wird nie zurückgesetzt)
+  const vJahr = vertragsJahr(tag);
+  // beim ersten Mal den bisher gemessenen Monatsverbrauch übernehmen (Shelly misst erst seit diesem Monat)
+  if (!energie.vertraege) energie.vertraege = { [vJahr]: Math.max(0, (energie.monatWh || 0) - neu) };
+  energie.vertraege[vJahr] = (energie.vertraege[vJahr] || 0) + neu;
   energieSpeichern();
 
   const watt = gueltig ? messung.watt : 0;
@@ -284,6 +311,7 @@ async function stromAbfragen() {
     heute: { kwh: runde(energie.tagWh / 1000, 1), euro: runde(energie.tagWh / 1000 * STROMPREIS) },
     monat: { kwh: runde(energie.monatWh / 1000, 1), euro: runde(energie.monatWh / 1000 * STROMPREIS) },
     hochrechnungEuro: Math.round(hochrechnung),
+    vertrag: { aktuell: vertragInfo(vJahr), vorjahr: vertragInfo(vJahr - 1) },
     preisProKwh: STROMPREIS
   };
 }

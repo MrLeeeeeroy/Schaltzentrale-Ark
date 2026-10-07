@@ -331,6 +331,20 @@ body {
 }
 body.nacht .band { opacity: 0.38; filter: sepia(0.35) saturate(0.8); }
 
+/* ---------- Stromzeiträume im Kopf des Root-Server-Bereichs: Vorjahr | aktuell ---------- */
+.root-kopf { align-items: center; flex-wrap: nowrap; gap: 0.6rem; }
+.root-kopf > .label, .root-kopf > .root-lauf { white-space: nowrap; }
+.vertraege { flex: 1; min-width: 0; display: flex; justify-content: center; align-items: center; gap: 0.8rem; }
+.vertrag { display: grid; grid-template-columns: auto auto; column-gap: 0.45rem; row-gap: 0.05rem; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vertrag .vz { font-family: var(--font-label); font-size: 0.62rem; letter-spacing: 0.06em; color: var(--muted); align-self: center; }
+.vertrag .vw { font-size: 0.85rem; font-weight: 500; color: var(--fg); text-align: right; }
+.vertrag.alt .vw { color: var(--muted); font-weight: 400; }
+.vertrag-trenner { width: 1px; align-self: stretch; background: var(--line); }
+@media (max-width: 760px) {
+  .root-kopf { flex-wrap: wrap; }
+  .vertraege { order: 3; flex-basis: 100%; justify-content: flex-start; }
+}
+
 /* Symbolfarben */
 .i-sonne { color: var(--sun); }
 .i-mond, .i-wolke, .i-nebel { color: var(--muted); }
@@ -426,6 +440,17 @@ body.nacht #himmel { opacity: 0.6; }
     <div class="root" id="root">
       <div class="root-kopf">
         <span class="label">Root-Server</span>
+        <span class="vertraege">
+          <span class="vertrag alt" title="Vorjahr">
+            <span class="vz" id="vjVon">–</span><span class="vw" id="vjKwh">–</span>
+            <span class="vz" id="vjBis">–</span><span class="vw" id="vjEuro">–</span>
+          </span>
+          <span class="vertrag-trenner"></span>
+          <span class="vertrag" title="Aktueller Zeitraum">
+            <span class="vz" id="vaVon">–</span><span class="vw" id="vaKwh">–</span>
+            <span class="vz" id="vaBis">–</span><span class="vw" id="vaEuro">–</span>
+          </span>
+        </span>
         <span class="root-lauf" id="rootLauf">wird geladen …</span>
       </div>
       <div class="strom" id="strom">
@@ -1070,6 +1095,16 @@ function rootZeigen(system, strom) {
   $("kostenHeute").innerHTML = `${euro(s.heute.euro)} <small>${kwh(s.heute.kwh)}</small>`;
   $("kostenMonat").innerHTML = `${euro(s.monat.euro)} <small>${kwh(s.monat.kwh)}</small>`;
   $("kostenProg").textContent = `≈ ${s.hochrechnungEuro ?? 0} €`;
+
+  // Stromzeiträume (Vorjahr | aktuell), Euro = kWh × Preis
+  const kwh2 = (x) => x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "\u00a0kWh";
+  const v = strom && strom.vertrag;
+  for (const [pre, z] of [["vj", v && v.vorjahr], ["va", v && v.aktuell]]) {
+    $(pre + "Von").textContent = z ? z.von : "–";
+    $(pre + "Bis").textContent = z ? z.bis : "–";
+    $(pre + "Kwh").textContent = z ? kwh2(z.kwh) : "–";
+    $(pre + "Euro").textContent = z ? euro(z.euro) : "–";
+  }
 }
 
 

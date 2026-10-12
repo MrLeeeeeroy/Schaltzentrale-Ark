@@ -241,6 +241,7 @@ body {
 .kosten .k { font-family: var(--font-label); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .kosten .v { font-size: 0.95rem; }
 .kosten .v small { color: var(--muted); font-size: 0.78rem; }
+.kosten .jetzt { font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .last { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem; }
 .balken { display: grid; gap: 0.3rem; min-width: 0; }
 .balken .zeile { display: flex; justify-content: space-between; gap: 0.4rem; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
@@ -461,6 +462,7 @@ body.nacht #himmel { opacity: 0.6; }
         <div class="kosten">
           <span class="k">Heute</span><span class="k" id="monatName">Monat</span><span class="k">Hochrechnung</span>
           <span class="v" id="kostenHeute">0,00 € <small>0,0 kWh</small></span><span class="v" id="kostenMonat">0,00 € <small>0,0 kWh</small></span><span class="v" id="kostenProg">≈ 0 €</span>
+          <span></span><span></span><span class="jetzt" id="kostenJetzt"></span>
         </div>
       </div>
       <div class="last">
@@ -1134,6 +1136,11 @@ function rootZeigen(system, strom) {
   $("kostenHeute").innerHTML = `${euro(s.heute.euro)} <small>${kwh(s.heute.kwh)}</small>`;
   $("kostenMonat").innerHTML = `${euro(s.monat.euro)} <small>${kwh(s.monat.kwh)}</small>`;
   $("kostenProg").textContent = `≈ ${s.hochrechnungEuro ?? 0} €`;
+  // Zum Vergleich: ganzer Monat mit der aktuellen Leistung (Preis aus dem Stromzeitraum, sonst 0,2917 €)
+  const jetzt = new Date(), za = s.vertrag && s.vertrag.aktuell;
+  const preis = s.preisProKwh || (za && za.kwh > 0 ? za.euro / za.kwh : 0.2917);
+  const stundenMonat = new Date(jetzt.getFullYear(), jetzt.getMonth() + 1, 0).getDate() * 24;
+  $("kostenJetzt").textContent = s.watt > 0 ? `bei ${s.watt}\u00a0W ≈ ${Math.round(s.watt * stundenMonat / 1000 * preis)}\u00a0€` : "";
 
   // Stromzeiträume (Vorjahr | aktuell), Euro = kWh × Preis
   const kwh2 = (x) => x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "\u00a0kWh";

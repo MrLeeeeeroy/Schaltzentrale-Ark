@@ -259,6 +259,8 @@ body {
 .pihole-kopf { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
 .pihole-status { font-size: 0.8rem; color: var(--muted); }
 .pihole-status.aus { color: var(--aus); }
+.ph-reboot { text-transform: none; letter-spacing: 0.03em; font-size: 0.68rem; }
+.ph-reboot.alt { color: var(--sun); }
 .pihole-werte { display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 0.2rem 0.8rem; }
 .pw { display: grid; gap: 0.15rem; min-width: 0; }
 .pw .z { font-size: 1.05rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -407,7 +409,7 @@ body.nacht #himmel { opacity: 0.6; }
   <section class="wetter" aria-label="Wetter">
     <div class="pihole" id="pihole">
       <div class="pihole-kopf">
-        <span class="label">Pi-hole</span>
+        <span class="label">Pi-hole <span class="ph-reboot" id="phReboot"></span></span>
         <span class="pihole-status" id="piholeStatus">wird geladen …</span>
       </div>
       <div class="pihole-werte">
@@ -1204,6 +1206,17 @@ async function arkLaden() {
   }
 }
 
+// Letzter Neustart des Pi (nächtlich um 2 Uhr); gelb, wenn er länger als 26 Std. her ist
+function rebootZeigen(start) {
+  const el = $("phReboot");
+  const d = start ? new Date(start) : null;
+  if (!d || isNaN(d)) { el.textContent = ""; el.classList.remove("alt"); return; }
+  const tag = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  const zeit = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  el.textContent = `(Reboot ${tag} - ${zeit} Uhr)`;
+  el.classList.toggle("alt", Date.now() - d.valueOf() > 26 * 3600e3);
+}
+
 // Pi-hole kommt direkt vom Raspberry Pi – unabhängig vom Root-Server
 async function piholeLaden() {
   try {
@@ -1212,8 +1225,10 @@ async function piholeLaden() {
     const daten = await antwort.json();
     if (!daten.stand || Date.now() - new Date(daten.stand).valueOf() > 7 * 60 * 1000) throw new Error("veraltet");
     piholeZeigen(daten.pihole);
+    rebootZeigen(daten.pi && daten.pi.start);
   } catch (e) {
     piholeZeigen(null);
+    rebootZeigen(null);
   }
 }
 piholeLaden();

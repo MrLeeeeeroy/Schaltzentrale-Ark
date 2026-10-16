@@ -69,7 +69,13 @@ def schleife():
     global stand
     while True:
         ph = abfragen()
-        stand = {"stand": datetime.now(timezone.utc).isoformat(timespec="seconds"), "pihole": ph}
+        jetzt = time.time()
+        try:
+            laufzeit = float(Path("/proc/uptime").read_text().split()[0])
+            start = datetime.fromtimestamp(jetzt - laufzeit, timezone.utc).isoformat(timespec="seconds")
+        except Exception:
+            start = None
+        stand = {"stand": datetime.now(timezone.utc).isoformat(timespec="seconds"), "pihole": ph, "pi": {"start": start}}
         print("Pi-hole", f"{ph['prozent']} % blockiert" if ph["online"] else "nicht erreichbar", flush=True)
         time.sleep(TAKT)
 
